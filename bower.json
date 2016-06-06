@@ -1,0 +1,17 @@
+{
+  "name": "web-triad-sdk-for-js",
+  "homepage": "https://github.com/acrscm/web-triad-sdk-for-js",
+  "authors": [
+    "acrscm"
+  ],
+  "description": "",
+  "main": "./lib/webTriadService.js",
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ]
+}
