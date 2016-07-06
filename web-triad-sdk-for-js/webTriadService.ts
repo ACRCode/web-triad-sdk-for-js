@@ -1,5 +1,4 @@
 ﻿class WebTriadService {
-
     private fileApiUrl = "/files";
     private submissionFileInfoApiUrl = "/submissionPackages";
     private submittedStudiesDetailsUrl = "/studies";
