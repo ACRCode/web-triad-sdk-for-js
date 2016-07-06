@@ -1,17 +1,26 @@
-class WebTriadService {
-    constructor(serviceSettings) {
-        this.fileApiUrl = "/files";
-        this.submissionFileInfoApiUrl = "/submissionPackages";
-        this.submittedStudiesDetailsUrl = "/studies";
-        this.submittedFilesDetailsUrl = "/submittedPackageFiles";
-        this.dicomViewerUrl = "/dicomViewerUrl";
-        this.self = this;
+﻿class WebTriadService {
+
+    private fileApiUrl = "/files";
+    private submissionFileInfoApiUrl = "/submissionPackages";
+    private submittedStudiesDetailsUrl = "/studies";
+    private submittedFilesDetailsUrl = "/submittedPackageFiles";
+    private dicomViewerUrl = "/dicomViewerUrl";
+    private self = this;
+
+    private settings: IServiceSettings;
+    private fileList: IFileExt[];
+    private numberOfFiles: number;
+    private canceledTransactionUid: string;
+
+    constructor(serviceSettings: IServiceSettings) {
+
         this.settings = $.extend({
             serverApiUrl: "http://cuv-triad-app.restonuat.local/api",
             recommendedSizePackageOfFiles: 1024 * 1024 * 4,
             sizeChunk: 1024 * 1024 * 2,
             numberOfConnection: 6
         }, serviceSettings);
+
         const serverApiUrl = this.settings.serverApiUrl;
         this.fileApiUrl = serverApiUrl + this.fileApiUrl;
         this.submissionFileInfoApiUrl = serverApiUrl + this.submissionFileInfoApiUrl;
@@ -21,9 +30,11 @@ class WebTriadService {
         this.fileList = [];
         this.numberOfFiles = 0;
     }
-    addFilesForUpload(files) {
+
+    addFilesForUpload(files: IFileExt[]): void {
         this.fileList = [];
         this.numberOfFiles = files.length;
+
         if (this.numberOfFiles > 0) {
             for (let i = 0; i < this.numberOfFiles; i++) {
                 files[i].number = i;
@@ -33,26 +44,31 @@ class WebTriadService {
             }
         }
     }
-    uploadFile(file, uploadFileProgress) {
+
+    uploadFile(file: IFileExt, uploadFileProgress: ICallbackProgress) {
         var self = this;
         self.setFileStatus(file, "uploading");
         var data = new DataUploadFile();
         data.file = file;
+
         if (!this.isContains(this.fileList, file)) {
             data.message = "File not found. Add the file for upload";
             data.status = "error";
             uploadFileProgress(data);
             return;
         }
+
         var numberOfChunks = Math.ceil(file.size / this.settings.sizeChunk);
         var start = this.settings.sizeChunk;
         var end = start + this.settings.sizeChunk;
         var numberOfSuccessfulUploadChunks = 0;
         var numberOfUploadedBytes = 0;
         var pendingRequests = 0;
-        var fileUri;
+        var fileUri: string;
+
         createFileResource(createFileResourceProgress);
-        function createFileResource(callback) {
+
+        function createFileResource(callback: (jqXhr: JQueryXHR) => void) {
             //pendingRequests++;
             var chunk = file.slice(0, self.settings.sizeChunk);
             const formData = new FormData();
@@ -77,13 +93,14 @@ class WebTriadService {
                     callback(jqXhr);
                 }
             });
-        }
-        ;
-        function createFileResourceProgress(jqXhr) {
+        };
+
+        function createFileResourceProgress(jqXhr: JQueryXHR) {
             numberOfSuccessfulUploadChunks++;
             fileUri = jqXhr.getResponseHeader("Location");
             file.uri = fileUri;
             data.fileUri = fileUri;
+
             if (numberOfChunks === 1) {
                 self.setFileStatus(file, "uploaded");
                 data.message = "File is uploaded";
@@ -93,21 +110,23 @@ class WebTriadService {
                 uploadFileProgress(data);
                 return;
             }
+
             data.status = "uploading";
             data.message = "File is uploading";
             data.progress = Math.ceil(numberOfUploadedBytes / file.size * 100);
             data.progressBytes = numberOfUploadedBytes;
             uploadFileProgress(data);
+
             for (let i = 2; i <= self.settings.numberOfConnection + 1; i++) {
-                if (start >= file.size)
-                    return;
+                if (start >= file.size) return;
                 sendChunk(start, end, i);
                 start = i * self.settings.sizeChunk;
                 end = start + self.settings.sizeChunk;
             }
-        }
-        ;
-        function sendChunk(start, end, chunkNumber) {
+
+        };
+
+        function sendChunk(start: number, end: number, chunkNumber: number) {
             if (!addRequest()) {
                 return;
             }
@@ -136,9 +155,9 @@ class WebTriadService {
                     uploadHandler(jqXhr, chunkNumber);
                 }
             });
-        }
-        ;
-        function uploadHandler(jqXhr, chunkNumber) {
+        };
+
+        function uploadHandler(jqXhr: JQueryXHR, chunkNumber: number) {
             numberOfSuccessfulUploadChunks++;
             if (numberOfSuccessfulUploadChunks === numberOfChunks) {
                 self.setFileStatus(file, "uploaded");
@@ -149,21 +168,24 @@ class WebTriadService {
                 uploadFileProgress(data);
                 return;
             }
+
             data.status = "uploading";
             data.message = "File is uploading";
             data.progress = Math.ceil(numberOfUploadedBytes / file.size * 100);
             data.progressBytes = numberOfUploadedBytes;
             uploadFileProgress(data);
+
             chunkNumber += self.settings.numberOfConnection;
-            if (chunkNumber > numberOfChunks)
-                return;
+
+            if (chunkNumber > numberOfChunks) return;
+
             start = (chunkNumber - 1) * self.settings.sizeChunk;
             end = start + self.settings.sizeChunk;
             sendChunk(start, end, chunkNumber);
         }
+
         function addRequest() {
-            if (file.status !== "canceling")
-                return true;
+            if (file.status !== "canceling") return true;
             if (pendingRequests === 0) {
                 file.cancelUploadFileProgress = uploadFileProgress;
                 self.deleteFile(file);
@@ -171,8 +193,11 @@ class WebTriadService {
             return false;
         }
     }
+
+
     ////////////////////////////TODO
-    cancelUploadFile(uri, cancelUploadFileProgress) {
+
+    cancelUploadFile(uri: string, cancelUploadFileProgress: ICallbackProgress) {
         for (let i = 0; i < this.fileList.length; i++) {
             if (this.fileList[i].uri === uri) {
                 this.fileList[i].cancelUploadFileProgress = cancelUploadFileProgress;
@@ -181,8 +206,11 @@ class WebTriadService {
             }
         }
     }
+
     ////////////////////////////
-    uploadAndSubmitAllFiles(metadata, uploadAndSubmitFilesProgress) {
+
+
+    uploadAndSubmitAllFiles(metadata: ItemData[], uploadAndSubmitFilesProgress: ICallbackProgress) {
         var self = this;
         var data = new DataUploadFile();
         var numberOfUploadedFileInPackage = 0;
@@ -190,16 +218,17 @@ class WebTriadService {
         var end = 0;
         var numberOfFiles = this.fileList.length;
         var numberOfFileInPackage = 0;
-        var packageOfFiles = [];
-        var packageOfFileUris = [];
+        var packageOfFiles: IFileExt[] = [];
+        var packageOfFileUris: string[] = [];
         var fileListSize = getSizeOfListFiles(this.fileList);
-        var packageSize;
+        var packageSize: number;
         var numberOfUploadedBytes = 0;
         var isAdditionalSubmit = false;
         var additionalSubmitTransactionUid;
         var transactionUid = self.getGuid();
         data.transactionUid = transactionUid;
         metadata.push(new ItemData("TransactionUID", transactionUid));
+
         for (let i = 0; i < metadata.length; i++) {
             if (metadata[i].Name === "AdditionalSubmitTransactionUID") {
                 isAdditionalSubmit = true;
@@ -207,7 +236,9 @@ class WebTriadService {
                 break;
             }
         }
+
         processingNextPackage();
+
         function processingNextPackage() {
             getNextPackageOfFiles();
             numberOfUploadedFileInPackage = 0;
@@ -216,39 +247,41 @@ class WebTriadService {
             packageOfFileUris = [];
             uploadNextFileFromPackage();
         }
+
         function uploadNextFileFromPackage() {
-            if (self.canceledTransactionUid === transactionUid)
-                return;
-            if (packageOfFiles.length === 0)
-                return;
+            if (self.canceledTransactionUid === transactionUid) return;
+            if (packageOfFiles.length === 0) return;
             const file = packageOfFiles.splice(0, 1)[0];
             self.uploadFile(file, uploadFilesProgress);
         }
-        function getSizeOfListFiles(list) {
+
+        function getSizeOfListFiles(list: IFileExt[]) {
             let size = 0;
             for (let i = 0; i < list.length; i++) {
                 size += list[i].size;
             }
             return size;
         }
+
         function getNextPackageOfFiles() {
             let currentSize = 0;
-            let file;
+            let file: IFileExt;
             begin = end;
             end += 1;
             file = self.fileList.slice(begin, end)[0];
             packageOfFiles.push(file);
             currentSize += file.size;
+
             while (true) {
                 file = self.fileList.slice(end, end + 1)[0];
-                if (!(file && ((currentSize += file.size) < self.settings.recommendedSizePackageOfFiles)))
-                    return;
+                if (!(file && ((currentSize += file.size) < self.settings.recommendedSizePackageOfFiles))) return;
                 packageOfFiles.push(file);
                 begin = end;
                 end += 1;
             }
         }
-        function uploadFilesProgress(result) {
+
+        function uploadFilesProgress(result: DataUploadFile) {
             switch (result.status) {
                 case "uploaded":
                     if (self.canceledTransactionUid === transactionUid) {
@@ -269,13 +302,13 @@ class WebTriadService {
                         const parameters = {
                             FileUris: packageOfFileUris,
                             Metadata: metadata
-                        };
+                        }
                         if (!isAdditionalSubmit) {
                             self.submitFiles(parameters, submitFilesProgress);
-                        }
-                        else {
+                        } else {
                             self.additionalSubmitFiles(additionalSubmitTransactionUid, parameters, submitFilesProgress);
                         }
+
                         return;
                     }
                     uploadAndSubmitFilesProgress(data);
@@ -290,15 +323,18 @@ class WebTriadService {
                     data.result = result;
                     uploadAndSubmitFilesProgress(data);
                     break;
+
                 case "error":
                     data.status = "error";
                     data.message = "uploadFileProgress";
                     uploadAndSubmitFilesProgress(data);
                     break;
+
                 default:
             }
         }
-        function submitFilesProgress(result) {
+
+        function submitFilesProgress(result: DataUploadFile) {
             switch (result.status) {
                 case "success":
                     if (end < numberOfFiles) {
@@ -308,15 +344,19 @@ class WebTriadService {
                         processingNextPackage();
                         return;
                     }
+
                     data.test = numberOfUploadedBytes + "///" + fileListSize;
                     data.status = "success";
                     data.message = "submitFilesProgress";
                     uploadAndSubmitFilesProgress(data);
+
                     break;
                 case "error":
+
                     data.status = "error";
                     data.message = "submitFilesProgress";
                     if (data.errorCode === 410) {
+
                         data.details = result.details;
                         for (let i = 0; i < numberOfFiles; i++) {
                             self.cancelUploadFile(self.fileList[i].uri, uploadAndSubmitFilesProgress);
@@ -327,11 +367,15 @@ class WebTriadService {
                 default:
             }
         }
-    }
-    ;
+    };
+
     ////////////////////////////
+
     ////////////////////////////
-    additionalSubmitFiles(uri, parameters, additionalSubmitFilesProgress) {
+
+
+    additionalSubmitFiles(uri: string, parameters: SubmissionPackageData, additionalSubmitFilesProgress: ICallbackProgress) {
+
         var isContainsTransactionUid = false;
         for (let i = 0; i < parameters.Metadata.length; i++) {
             if (parameters.Metadata[i].Name === "TransactionUID") {
@@ -340,12 +384,15 @@ class WebTriadService {
             }
         }
         if (!isContainsTransactionUid) {
-            parameters.Metadata.push({
-                Name: "TransactionUID",
-                Value: this.getGuid()
-            });
+            parameters.Metadata.push(
+                {
+                    Name: "TransactionUID",
+                    Value: this.getGuid()
+                });
         }
+
         var data = new DataUploadFile();
+
         $.ajax({
             url: this.submissionFileInfoApiUrl + "/" + uri,
             type: "POST",
@@ -365,8 +412,11 @@ class WebTriadService {
             }
         });
     }
+
     ////////////////////////////
-    submitFiles(parameters, submitFilesProgress) {
+
+    submitFiles(parameters: SubmissionPackageData, submitFilesProgress: ICallbackProgress) {
+
         let isContainsTransactionUid = false;
         for (let i = 0; i < parameters.Metadata.length; i++) {
             if (parameters.Metadata[i].Name === "TransactionUID") {
@@ -375,12 +425,15 @@ class WebTriadService {
             }
         }
         if (!isContainsTransactionUid) {
-            parameters.Metadata.push({
-                Name: "TransactionUID",
-                Value: this.getGuid()
-            });
+            parameters.Metadata.push(
+                {
+                    Name: "TransactionUID",
+                    Value: this.getGuid()
+                });
         }
+
         var data = new DataUploadFile();
+
         $.ajax({
             url: this.submissionFileInfoApiUrl,
             type: "PUT",
@@ -399,19 +452,26 @@ class WebTriadService {
             }
         });
     }
+
     ////////////////////////////TODO
-    cancelSubmit(parameters, cancelSubmitProgress) {
+
+    cancelSubmit(parameters: ItemData[], cancelSubmitProgress: ICallbackProgress) {
+
         const self = this;
+
+
         var data = new DataUploadFile();
-        const arr = {};
+
+        const arr: Object = {};
+
         for (let i = 0; i < parameters.length; i++) {
             if (parameters[i].Name === "TransactionUID") {
                 this.canceledTransactionUid = parameters[i].Value;
-            }
-            else {
+            } else {
                 arr[parameters[i].Name] = parameters[i].Value;
             }
         }
+
         $.ajax({
             url: this.submissionFileInfoApiUrl + "/" + this.canceledTransactionUid + "?" + $.param(arr),
             type: "DELETE",
@@ -431,8 +491,7 @@ class WebTriadService {
                 for (let i = 0; i < self.fileList.length; i++) {
                     if (self.fileList[i].status === "uploading") {
                         self.fileList[i].status = "canceling";
-                    }
-                    else if (self.fileList[i].status === "uploaded") {
+                    } else if (self.fileList[i].status === "uploaded") {
                         self.fileList[i].status = "canceling";
                         self.fileList[i].cancelUploadFileProgress = cancelSubmitProgress;
                         //fileForDelete.push(this.fileList[i]);
@@ -442,12 +501,16 @@ class WebTriadService {
             }
         });
         // const fileForDelete: IFileExt[] = [];
+
+
         //for (let i = 0; i < fileForDelete.length; i++) {
         //    this.deleteFile(fileForDelete[i]);
         //}
     }
+
     ////////////////////////////
-    isContains(list, obj) {
+
+    private isContains(list: any[], obj: any) {
         let i = list.length;
         while (i--) {
             if (list[i] === obj) {
@@ -456,15 +519,20 @@ class WebTriadService {
         }
         return false;
     }
-    getGuid() {
+
+    private getGuid() {
         function s4() {
             return (((1 + Math.random()) * 0x10000) | 0).toString(16).substring(1);
         }
+
         return (s4() + s4() + "-" + s4() + "-4" + s4().substr(0, 3) +
             "-" + s4() + "-" + s4() + s4() + s4()).toLowerCase();
     }
-    setFileStatus(file, status) {
+
+    private setFileStatus(file: IFileExt, status: string) {
+
         file.status = status;
+
         switch (status) {
             case "ready":
                 break;
@@ -484,9 +552,12 @@ class WebTriadService {
                 break;
         }
     }
-    deleteFile(file) {
+
+    private deleteFile(file: IFileExt) {
         var callback = file.cancelUploadFileProgress;
+
         var data = new DataUploadFile();
+
         $.ajax({
             url: this.fileApiUrl + "/" + file.uri,
             type: "DELETE",
@@ -505,18 +576,56 @@ class WebTriadService {
         });
     }
 }
+
 class DataUploadFile {
+    file: IFileExt;
+    message: string;
+    status: string;
+    fileUri: string;
+    details: string;
+    progress: number;
+    progressBytes: number;
+    blockSize: number;
+    errorCode: number;
+    transactionUid: string;
+    result: any;
+    test: string;
 }
+
 class ItemData {
-    constructor(name, value) {
+    Name: string;
+    Value: any;
+
+    constructor(name: string, value: any) {
         this.Name = name;
         this.Value = value;
     }
 }
+
 class SubmissionPackageData {
-    constructor(fileUris, metadata) {
+    FileUris: string[];
+    Metadata: ItemData[];
+    constructor(fileUris: string[], metadata: ItemData[]) {
         this.FileUris = fileUris;
         this.Metadata = metadata;
     }
 }
-//# sourceMappingURL=webTriadService.js.map
+
+interface IFileExt extends File {
+    number: number;
+    id: string;
+    uri: string;
+    status: string;
+    cancelUploadFileProgress: (dataUploadFile: DataUploadFile) => void;
+}
+
+interface IServiceSettings {
+    serverApiUrl?: string;
+    recommendedSizePackageOfFiles?: number;
+    sizeChunk?: number;
+    numberOfConnection?: number;
+}
+
+interface ICallbackProgress {
+    (data: DataUploadFile): void;
+}
