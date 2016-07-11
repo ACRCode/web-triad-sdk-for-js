@@ -187,7 +187,7 @@
             if (file.status !== "canceling") return true;
             if (pendingRequests === 0) {
                 file.cancelUploadFileProgress = uploadFileProgress;
-                self.deleteFile(file);
+                self.deleteFileFromStage(file);
             }
             return false;
         }
@@ -222,17 +222,25 @@
         var fileListSize = getSizeOfListFiles(this.fileList);
         var packageSize: number;
         var numberOfUploadedBytes = 0;
-        var isAdditionalSubmit = false;
         var additionalSubmitTransactionUid;
         var transactionUid = self.getGuid();
         data.transactionUid = transactionUid;
         metadata.push(new ItemData("TransactionUID", transactionUid));
 
+        var typeSubmit = TypeSubmit.Submit;
+
         for (let i = 0; i < metadata.length; i++) {
-            if (metadata[i].Name === "AdditionalSubmitTransactionUID") {
-                isAdditionalSubmit = true;
-                additionalSubmitTransactionUid = metadata[i].Value;
+            if (metadata[i].Name === "TypeSubmit") {
+                typeSubmit = metadata[i].Value;
                 break;
+            }
+        }
+        if (typeSubmit === TypeSubmit.AdditionalSubmit) {
+            for (let i = 0; i < metadata.length; i++) {
+                if (metadata[i].Name === "AdditionalSubmitTransactionUID") {
+                    additionalSubmitTransactionUid = metadata[i].Value;
+                    break;
+                }
             }
         }
 
@@ -286,7 +294,7 @@
                     if (self.canceledTransactionUid === transactionUid) {
                         //result.file.status = "canceling";
                         //result.file.cancelUploadFileProgress = uploadAndSubmitFilesProgress;
-                        //self.deleteFile(result.file);
+                        //self.deleteFileFromStage(result.file);
                         return;
                     }
                     numberOfUploadedBytes += result.blockSize;
@@ -302,12 +310,19 @@
                             FileUris: packageOfFileUris,
                             Metadata: metadata
                         }
-                        if (!isAdditionalSubmit) {
-                            self.submitFiles(parameters, submitFilesProgress);
-                        } else {
-                            self.additionalSubmitFiles(additionalSubmitTransactionUid, parameters, submitFilesProgress);
-                        }
 
+                        switch (typeSubmit) {
+                            case TypeSubmit.Submit:
+                                self.submitFiles(parameters, submitFilesProgress);
+                                break;
+                            case TypeSubmit.AdditionalSubmit:
+                                self.additionalSubmitFiles(additionalSubmitTransactionUid, parameters, submitFilesProgress);
+                                break;
+                            case TypeSubmit.AttachFile:
+                                self.attachFile(parameters, submitFilesProgress);
+                                break;
+                            default:
+                        }
                         return;
                     }
                     uploadAndSubmitFilesProgress(data);
@@ -452,6 +467,47 @@
         });
     }
 
+    ////////////////////////////
+
+    attachFile(parameters: SubmissionPackageData, submitFilesProgress: ICallbackProgress) {
+
+        let isContainsTransactionUid = false;
+        for (let i = 0; i < parameters.Metadata.length; i++) {
+            if (parameters.Metadata[i].Name === "TransactionUID") {
+                isContainsTransactionUid = true;
+                break;
+            }
+        }
+        if (!isContainsTransactionUid) {
+            parameters.Metadata.push(
+                {
+                    Name: "TransactionUID",
+                    Value: this.getGuid()
+                });
+        }
+
+        var data = new DataUploadFile();
+
+        $.ajax({
+            url: this.submissionFileInfoApiUrl,
+            type: "POST",
+            contentType: "application/json; charset=utf-8",
+            data: JSON.stringify(parameters),
+            error(jqXhr) {
+                data.status = "error";
+                data.message = "ERROR Attach";
+                data.details = jqXhr.responseText;
+                data.errorCode = jqXhr.status;
+                submitFilesProgress(data);
+            },
+            success() {
+                data.status = "success";
+                submitFilesProgress(data);
+            }
+        });
+    }
+
+
     ////////////////////////////TODO
 
     cancelSubmit(parameters: ItemData[], cancelSubmitProgress: ICallbackProgress) {
@@ -493,21 +549,131 @@
                     } else if (self.fileList[i].status === "uploaded") {
                         self.fileList[i].status = "canceling";
                         self.fileList[i].cancelUploadFileProgress = cancelSubmitProgress;
+                        // const fileForDelete: IFileExt[] = [];
                         //fileForDelete.push(this.fileList[i]);
-                        self.deleteFile(self.fileList[i]);
+                        //for (let i = 0; i < fileForDelete.length; i++) {
+                        //    this.deleteFileFromStage(fileForDelete[i]);
+                        //}
+                        self.deleteFileFromStage(self.fileList[i]);
                     }
                 }
             }
         });
-        // const fileForDelete: IFileExt[] = [];
+    }
 
 
-        //for (let i = 0; i < fileForDelete.length; i++) {
-        //    this.deleteFile(fileForDelete[i]);
-        //}
+    getStudiesDetails(parameters: ItemData[], callback: (data: SubmittedStudyDetails) => void) {
+        $.ajax({
+            url: this.submittedStudiesDetailsUrl + "?" + $.param(parameters),
+            type: "GET",
+            dataType: "json",
+            error(jqXhr, textStatus, errorThrown) {
+                //console.log(textStatus + " // " + errorThrown + " // " + jqXhr.responseText);
+            },
+            success(data: any, textStatus: any, jqXhr: JQueryXHR) {
+                callback(data);
+            }
+        });
+    }
+
+
+
+    ////////////////////////////
+
+
+    getFileListByStudyId(studyId: number, callback: (data: SubmittedFileDetails) => void) {
+
+        const parameters = {};
+        parameters["DicomDataStudyId"] = studyId;
+        parameters["ParentLevel"] = "Study";
+        $.ajax({
+            url: this.submittedFilesDetailsUrl + "?" + $.param(parameters),
+            type: "GET",
+            dataType: 'json',
+            error(jqXhr, textStatus, errorThrown) {
+                console.log(textStatus + " // " + errorThrown + " // " + jqXhr.responseText);
+            },
+            success(data, textStatus, jqXhr) {
+                callback(data);
+            }
+        });
     }
 
     ////////////////////////////
+
+    openViewer(parameters: ItemData[], callback: (url: string) => void) {
+
+        $.ajax({
+            url: this.dicomViewerUrl,
+            type: "PUT",
+            contentType: "application/json; charset=utf-8",
+            data: JSON.stringify(parameters),
+            error(jqXhr, textStatus, errorThrown) {
+                console.log(textStatus + " // " + errorThrown + " // " + jqXhr.responseText);
+            },
+            success(data, textStatus, jqXhr) {
+                const url = jqXhr.getResponseHeader("Location");
+                callback(url);
+            }
+        });
+    }
+
+
+
+    ////////////////////////////
+
+    downloadFile(id: number) {
+        const self = this;
+        $.ajax({
+            url: this.submittedFilesDetailsUrl + "/getUrlFile/" + id,
+            type: "GET",
+            success(result, text, jqXhr) {
+                const url = jqXhr.getResponseHeader("Location");
+                window.location.href = self.submittedFilesDetailsUrl + "/" + url;
+            }
+        });
+    }
+
+    deleteFile(id: number, callback: () => void) {
+    $.ajax({
+        url: this.submittedFilesDetailsUrl + "/" + id,
+        type: "DELETE",
+        error(jqXhr, textStatus, errorThrown) {
+            console.log(textStatus + " // " + errorThrown + " // " + jqXhr.responseText);
+        },
+        success() {
+            callback();
+        }
+    });
+}
+
+
+    ////////////////////////////
+    ////////////////////////////
+    ////////////////////////////
+
+    private deleteFileFromStage(file: IFileExt) {
+        var callback = file.cancelUploadFileProgress;
+
+        var data = new DataUploadFile();
+
+        $.ajax({
+            url: this.fileApiUrl + "/" + file.uri,
+            type: "DELETE",
+            error(jqXhr, textStatus, errorThrown) {
+                data.status = "error";
+                data.message = "ERROR CANCEL UPLOAD FILE";
+                data.details = jqXhr.responseText;
+                data.errorCode = jqXhr.status;
+                callback(data);
+            },
+            success(result, textStatus, jqXhr) {
+                data.status = "success";
+                data.message = "CANCEL UPLOAD FILE";
+                callback(data);
+            }
+        });
+    }
 
     private isContains(list: any[], obj: any) {
         let i = list.length;
@@ -551,29 +717,6 @@
                 break;
         }
     }
-
-    private deleteFile(file: IFileExt) {
-        var callback = file.cancelUploadFileProgress;
-
-        var data = new DataUploadFile();
-
-        $.ajax({
-            url: this.fileApiUrl + "/" + file.uri,
-            type: "DELETE",
-            error(jqXhr, textStatus, errorThrown) {
-                data.status = "error";
-                data.message = "ERROR CANCEL UPLOAD FILE";
-                data.details = jqXhr.responseText;
-                data.errorCode = jqXhr.status;
-                callback(data);
-            },
-            success(result, textStatus, jqXhr) {
-                data.status = "success";
-                data.message = "CANCEL UPLOAD FILE";
-                callback(data);
-            }
-        });
-    }
 }
 
 class DataUploadFile {
@@ -610,12 +753,35 @@ class SubmissionPackageData {
     }
 }
 
+class SubmittedStudyDetails {
+    StudyUri: string;
+    SubmissionPackageUri: string;
+    Metadata: ItemData[];
+
+    constructor(studyUri: string, submissionPackageUri: string, metadata: ItemData[]) {
+        this.StudyUri = studyUri;
+        this.SubmissionPackageUri = submissionPackageUri;
+        this.Metadata = metadata;
+    }
+
+}
+
+class SubmittedFileDetails {
+    FileId: number;
+    Metadata: ItemData[];
+    constructor(fileId: number, metadata: ItemData[]) {
+        this.FileId = fileId;
+        this.Metadata = metadata;
+    }
+
+}
+
 interface IFileExt extends File {
     number: number;
     id: string;
     uri: string;
     status: string;
-    cancelUploadFileProgress: (dataUploadFile: DataUploadFile) => void;
+    cancelUploadFileProgress: ICallbackProgress;
 }
 
 interface IServiceSettings {
@@ -627,4 +793,10 @@ interface IServiceSettings {
 
 interface ICallbackProgress {
     (data: DataUploadFile): void;
+}
+
+enum TypeSubmit {
+    Submit,
+    AdditionalSubmit,
+    AttachFile
 }
