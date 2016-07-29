@@ -232,7 +232,7 @@
         data.transactionUid = transactionUid;
         metadata.push(new ItemData("TransactionUID", transactionUid));
 
-        var typeSubmit = TypeSubmit.Submit;
+        var typeSubmit = TypeSubmit.CreateSubmissionPackage;
 
         for (let i = 0; i < metadata.length; i++) {
             if (metadata[i].Name === "TypeSubmit") {
@@ -240,7 +240,7 @@
                 break;
             }
         }
-        if (typeSubmit === TypeSubmit.AdditionalSubmit) {
+        if (typeSubmit === TypeSubmit.AddDicomFilesToExistingSubmissionPackage) {
             for (let i = 0; i < metadata.length; i++) {
                 if (metadata[i].Name === "AdditionalSubmitTransactionUID") {
                     additionalSubmitTransactionUid = metadata[i].Value;
@@ -319,13 +319,13 @@
                         }
 
                         switch (typeSubmit) {
-                            case TypeSubmit.Submit:
+                            case TypeSubmit.CreateSubmissionPackage:
                                 self.submitFiles(parameters, submitFilesProgress);
                                 break;
-                            case TypeSubmit.AdditionalSubmit:
+                            case TypeSubmit.AddDicomFilesToExistingSubmissionPackage:
                                 self.additionalSubmitFiles(additionalSubmitTransactionUid, parameters, submitFilesProgress);
                                 break;
-                            case TypeSubmit.AttachFile:
+                            case TypeSubmit.AddNonDicomFilesToExistingSubmissionPackage:
                                 self.attachFiles(parameters, submitFilesProgress);
                                 break;
                             default:
@@ -822,9 +822,9 @@ interface ICallbackProgress {
 }
 
 enum TypeSubmit {
-    Submit,
-    AdditionalSubmit,
-    AttachFile
+    CreateSubmissionPackage,
+    AddDicomFilesToExistingSubmissionPackage,
+    AddNonDicomFilesToExistingSubmissionPackage
 }
 
 enum ProcessStatus {
