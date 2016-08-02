@@ -15,7 +15,7 @@
 
         this.settings = $.extend({
             serverApiUrl: "http://cuv-triad-app.restonuat.local/api",
-            recommendedSizePackageOfFiles: 1024 * 1024 * 4,
+            numberOfFilesInPackage: 4,
             sizeChunk: 1024 * 1024 * 2,
             numberOfConnection: 6
         }, serviceSettings);
@@ -276,22 +276,13 @@
         }
 
         function getNextPackageOfFiles() {
-            let currentSize = 0;
-            let file: IFileExt;
             begin = end;
-            end += 1;
-            file = self.fileList.slice(begin, end)[0];
-            packageOfFiles.push(file);
-            currentSize += file.size;
-
-            while (true) {
-                file = self.fileList.slice(end, end + 1)[0];
-                if (!(file && ((currentSize += file.size) < self.settings.recommendedSizePackageOfFiles))) return;
-                packageOfFiles.push(file);
-                begin = end;
-                end += 1;
-            }
+            end += self.settings.numberOfFilesInPackage;
+            let files = self.fileList.slice(begin, end);
+            if (files.length === 0) return;
+            packageOfFiles = files;           
         }
+
 
         function uploadFilesProgress(uploadData: IDataProcess) {
             //data.uploadFileData = uploadData;
@@ -320,13 +311,13 @@
 
                         switch (typeSubmit) {
                             case TypeSubmit.CreateSubmissionPackage:
-                                self.submitFiles(parameters, submitFilesProgress);
+                                self.createSubmissionPackage(parameters, submitFilesProgress);
                                 break;
                             case TypeSubmit.AddDicomFilesToExistingSubmissionPackage:
-                                self.additionalSubmitFiles(additionalSubmitTransactionUid, parameters, submitFilesProgress);
+                                self.addDicomFilesToExistingSubmissionPackage(additionalSubmitTransactionUid, parameters, submitFilesProgress);
                                 break;
                             case TypeSubmit.AddNonDicomFilesToExistingSubmissionPackage:
-                                self.attachFiles(parameters, submitFilesProgress);
+                                self.addNonDicomFilesToExistingSubmissionPackage(parameters, submitFilesProgress);
                                 break;
                             default:
                         }
@@ -394,8 +385,7 @@
 
     ////////////////////////////
 
-    additionalSubmitFiles(uri: string, parameters: SubmissionPackageData, additionalSubmitFilesProgress: ICallbackProgress) {
-
+    addDicomFilesToExistingSubmissionPackage(uri: string, parameters: SubmissionPackageData, additionalSubmitFilesProgress: ICallbackProgress) {
         let isContainsTransactionUid = false;
         for (let i = 0; i < parameters.Metadata.length; i++) {
             if (parameters.Metadata[i].Name === "TransactionUID") {
@@ -435,8 +425,7 @@
 
     ////////////////////////////
 
-    submitFiles(parameters: SubmissionPackageData, submitFilesProgress: ICallbackProgress) {
-
+    createSubmissionPackage(parameters: SubmissionPackageData, submitFilesProgress: ICallbackProgress) {
         let isContainsTransactionUid = false;
         for (let i = 0; i < parameters.Metadata.length; i++) {
             if (parameters.Metadata[i].Name === "TransactionUID") {
@@ -476,8 +465,7 @@
 
     ////////////////////////////
 
-    attachFiles(parameters: SubmissionPackageData, submitFilesProgress: ICallbackProgress) {
-
+    addNonDicomFilesToExistingSubmissionPackage(parameters: SubmissionPackageData, submitFilesProgress: ICallbackProgress) {
         let isContainsTransactionUid = false;
         for (let i = 0; i < parameters.Metadata.length; i++) {
             if (parameters.Metadata[i].Name === "TransactionUID") {
@@ -518,7 +506,6 @@
     ////////////////////////////
 
     cancelSubmit(parameters: ItemData[], cancelSubmitProgress: ICallbackProgress) {
-
         const self = this;
         const arr: Object = {};
         var data: IDataProcess = {};
@@ -553,11 +540,6 @@
                     } else if (self.fileList[i].status === FileStatus.Uploaded) {
                         self.fileList[i].status = FileStatus.Canceling;
                         self.fileList[i].cancelUploadFileProgress = cancelSubmitProgress;
-                        // const fileForDelete: IFileExt[] = [];
-                        //fileForDelete.push(this.fileList[i]);
-                        //for (let i = 0; i < fileForDelete.length; i++) {
-                        //    this.deleteFileFromStage(fileForDelete[i]);
-                        //}
                         self.deleteFileFromStage(self.fileList[i]);
                     }
                 }
@@ -588,10 +570,9 @@
     ////////////////////////////
 
     getFileListByStudyId(studyId: number, callback: (data: any) => void) {
-
         const parameters = {};
         if (studyId !== undefined) {
-            parameters["DicomDataStudyId"] = studyId;
+            parameters["DicomDataStudyID"] = studyId;
         }
         parameters["ParentLevel"] = "Study";
         $.ajax({
@@ -766,26 +747,6 @@ class SubmissionPackageData {
     }
 }
 
-//class SubmittedStudyDetails {
-//    StudyUri: string;
-//    SubmissionPackageUri: string;
-//    Metadata: ItemData[];
-//    constructor(studyUri: string, submissionPackageUri: string, metadata: ItemData[]) {
-//        this.StudyUri = studyUri;
-//        this.SubmissionPackageUri = submissionPackageUri;
-//        this.Metadata = metadata;
-//    }
-//}
-
-//class SubmittedFileDetails {
-//    FileId: number;
-//    Metadata: ItemData[];
-//    constructor(fileId: number, metadata: ItemData[]) {
-//        this.FileId = fileId;
-//        this.Metadata = metadata;
-//    }
-//}
-
 interface IDataProcess {
     file?: IFileExt;
     message?: string;
@@ -812,7 +773,7 @@ interface IFileExt extends File {
 
 interface IServiceSettings {
     serverApiUrl?: string;
-    recommendedSizePackageOfFiles?: number;
+    numberOfFilesInPackage?: number;
     sizeChunk?: number;
     numberOfConnection?: number;
 }
