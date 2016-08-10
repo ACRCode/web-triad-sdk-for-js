@@ -4,12 +4,14 @@
     private submittedStudiesDetailsUrl = "/studies";
     private submittedFilesDetailsUrl = "/submittedPackageFiles";
     private dicomViewerUrl = "/dicomViewerUrl";
+    private anonymizationProfileUrl = "/anonymizationProfile";
     private self = this;
 
     private settings: IServiceSettings;
     private fileList: IFileExt[];
     private numberOfFiles: number;
-    private canceledTransactionUid: string;
+
+    private canceledTransactionUids: string[] = [];
 
     constructor(serviceSettings: IServiceSettings) {
 
@@ -26,6 +28,8 @@
         this.submittedStudiesDetailsUrl = serverApiUrl + this.submittedStudiesDetailsUrl;
         this.submittedFilesDetailsUrl = serverApiUrl + this.submittedFilesDetailsUrl;
         this.dicomViewerUrl = serverApiUrl + this.dicomViewerUrl;
+        this.anonymizationProfileUrl = serverApiUrl + this.anonymizationProfileUrl;
+
         this.fileList = [];
         this.numberOfFiles = 0;
     }
@@ -226,11 +230,8 @@
         var fileListSize = getSizeOfListFiles(this.fileList);
         var packageSize: number;
         var numberOfUploadedBytes = 0;
-        var additionalSubmitTransactionUid;
-        var transactionUid = self.getGuid();
-
-        data.transactionUid = transactionUid;
-        metadata.push(new ItemData("TransactionUID", transactionUid));
+        var additionalSubmitTransactionUid: string;
+        var transactionUid: string = null;    
 
         var typeSubmit = TypeSubmit.CreateSubmissionPackage;
 
@@ -240,6 +241,11 @@
                 break;
             }
         }
+
+        if (typeSubmit !== TypeSubmit.CreateSubmissionPackage) {
+            transactionUid = self.getGuid();
+        }
+
         if (typeSubmit === TypeSubmit.AddDicomFilesToExistingSubmissionPackage) {
             for (let i = 0; i < metadata.length; i++) {
                 if (metadata[i].Name === "AdditionalSubmitTransactionUID") {
@@ -261,7 +267,7 @@
         }
 
         function uploadNextFileFromPackage() {
-            if (self.canceledTransactionUid === transactionUid) return;
+            if (self.canceledTransactionUids.length > 0 && self.canceledTransactionUids.indexOf(transactionUid) > -1 ) return;
             if (packageOfFiles.length === 0) return;
             const file = packageOfFiles.splice(0, 1)[0];
             self.uploadFile(file, uploadFilesProgress);
@@ -288,7 +294,7 @@
             //data.uploadFileData = uploadData;
             switch (uploadData.status) {
                 case ProcessStatus.Success:
-                    if (self.canceledTransactionUid === transactionUid) {
+                    if (self.canceledTransactionUids.length > 0 && self.canceledTransactionUids.indexOf(transactionUid) > -1)  {
                         //result.file.status = "canceling";
                         //result.file.cancelUploadFileProgress = uploadAndSubmitFilesProgress;
                         //self.deleteFileFromStage(result.file);
@@ -311,12 +317,16 @@
 
                         switch (typeSubmit) {
                             case TypeSubmit.CreateSubmissionPackage:
-                                self.createSubmissionPackage(parameters, submitFilesProgress);
+                                self.createSubmissionPackage(parameters, submitFilesProgress);                               
                                 break;
                             case TypeSubmit.AddDicomFilesToExistingSubmissionPackage:
+                                data.transactionUid = transactionUid;
+                                parameters.Metadata.push(new ItemData("TransactionUID", transactionUid));
                                 self.addDicomFilesToExistingSubmissionPackage(additionalSubmitTransactionUid, parameters, submitFilesProgress);
                                 break;
                             case TypeSubmit.AddNonDicomFilesToExistingSubmissionPackage:
+                                data.transactionUid = transactionUid;
+                                parameters.Metadata.push(new ItemData("TransactionUID", transactionUid));
                                 self.addNonDicomFilesToExistingSubmissionPackage(parameters, submitFilesProgress);
                                 break;
                             default:
@@ -349,6 +359,13 @@
 
         function submitFilesProgress(submitData: IDataProcess) {
             //data.submitFilesData = submitData;
+            if (typeSubmit === TypeSubmit.CreateSubmissionPackage) {
+                transactionUid = submitData.transactionUid;
+                data.transactionUid = transactionUid;
+                typeSubmit = TypeSubmit.AddDicomFilesToExistingSubmissionPackage;
+                additionalSubmitTransactionUid = submitData.submissionPackageUid;
+            }
+
             switch (submitData.status) {
                 case ProcessStatus.Success:
                     if (end < numberOfFiles) {
@@ -425,22 +442,7 @@
 
     ////////////////////////////
 
-    createSubmissionPackage(parameters: SubmissionPackageData, submitFilesProgress: ICallbackProgress) {
-        let isContainsTransactionUid = false;
-        for (let i = 0; i < parameters.Metadata.length; i++) {
-            if (parameters.Metadata[i].Name === "TransactionUID") {
-                isContainsTransactionUid = true;
-                break;
-            }
-        }
-        if (!isContainsTransactionUid) {
-            parameters.Metadata.push(
-                {
-                    Name: "TransactionUID",
-                    Value: this.getGuid()
-                });
-        }
-
+    createSubmissionPackage(parameters: SubmissionPackageData, submitFilesProgress: ICallbackProgress) {      
         var data: IDataProcess = {};
 
         $.ajax({
@@ -455,7 +457,10 @@
                 data.errorCode = jqXhr.status;
                 submitFilesProgress(data);
             },
-            success() {
+            success(result, textStatus, jqXhr) {
+                const url = jqXhr.getResponseHeader("Location");
+                data.submissionPackageUid = url;
+                data.transactionUid = url;
                 data.status = ProcessStatus.Success;
                 data.message = "Success Submit";
                 submitFilesProgress(data);
@@ -481,6 +486,7 @@
                 });
         }
 
+
         var data: IDataProcess = {};
 
         $.ajax({
@@ -505,21 +511,11 @@
 
     ////////////////////////////
 
-    cancelSubmit(parameters: ItemData[], cancelSubmitProgress: ICallbackProgress) {
+    cancelSubmit(canceledTransactionUid: string, cancelSubmitProgress: ICallbackProgress) {
         const self = this;
-        const arr: Object = {};
         var data: IDataProcess = {};
-
-        for (let i = 0; i < parameters.length; i++) {
-            if (parameters[i].Name === "TransactionUID") {
-                this.canceledTransactionUid = parameters[i].Value;
-            } else {
-                arr[parameters[i].Name] = parameters[i].Value;
-            }
-        }
-
         $.ajax({
-            url: this.submissionFileInfoApiUrl + "/" + this.canceledTransactionUid + "?" + $.param(arr),
+            url: this.submissionFileInfoApiUrl + "/" + canceledTransactionUid ,
             type: "DELETE",
             error(jqXhr, textStatus, errorThrown) {
                 data.status = ProcessStatus.Error;
@@ -639,6 +635,8 @@
         });
     }
 
+    /////////////////////////////
+
     deleteFile(id: number, callback: (data: any) => void) {
         let data: IDataProcess = {};
         $.ajax({
@@ -656,9 +654,31 @@
         });
     }
 
+    ////////////////////////////
+
+    getAnonymizationProfile(parameters: ItemData[], callback: (data: any) => void) {     
+        $.ajax({
+            url: this.anonymizationProfileUrl + "?" + $.param(parameters),
+            type: "GET",
+            dataType: 'json',
+            error(jqXhr, textStatus, errorThrown) {
+                let data: IDataProcess = {};
+                data.status = ProcessStatus.Error;
+                data.message = jqXhr.responseText;
+                callback(data);
+            },
+            success(result, textStatus, jqXhr) {
+                let data: IDataProcess = {
+                    message: result,
+                    status: ProcessStatus.Success
+                };
+                callback(data);
+            }
+        });
+    }
 
     ////////////////////////////
-    ////////////////////////////
+    ///////////////////////////
     ////////////////////////////
 
     private deleteFileFromStage(file: IFileExt) {
@@ -758,6 +778,7 @@ interface IDataProcess {
     blockSize?: number;
     errorCode?: number;
     transactionUid?: string;
+    submissionPackageUid?: string;
     uploadFileData?: any;
     submitFilesData?: any;
     test?: string;
