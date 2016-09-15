@@ -66,6 +66,7 @@
     <TypeScriptRemoveComments>false</TypeScriptRemoveComments>
     <TypeScriptSourceMap>true</TypeScriptSourceMap>
     <TypeScriptTarget>ES6</TypeScriptTarget>
+    <TypeScriptModuleKind>system</TypeScriptModuleKind>
     <TypeScriptOutFile>..\lib\webTriadService.js</TypeScriptOutFile>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
