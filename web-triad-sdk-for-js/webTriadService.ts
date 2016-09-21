@@ -37,6 +37,17 @@
 
     ////////////////////////////////////////////
 
+    submitFiles(files: IFileExt[], metadata: ItemData[], uploadAndSubmitListOfFilesProgress: (data: any) => void) {
+        var id = this.addListOfFilesForUpload(files);
+        var data: any = {
+            listOfFilesId: id
+        }
+        uploadAndSubmitListOfFilesProgress(data);
+        this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
+    }
+
+    ////////////////////////////////////////////
+
     addListOfFilesForUpload(files: IFileExt[]): string {
         const listOfFilesId = this.getGuid();
         this.listsOfFiles[listOfFilesId] = {
@@ -406,6 +417,44 @@
                 callback(data);
             },
             success(data, textStatus, jqXhr) {
+                data.status = ProcessStatus.Success;
+                callback(data);
+            }
+        });
+    }
+
+    ////////////////////////////
+
+    deleteStudy(studyId: string, callback: (data: any) => void) {
+        let data: any = {};
+        $.ajax({
+            url: this.submittedStudiesDetailsUrl + "/" + studyId,
+            type: "DELETE",
+            error(jqXhr, textStatus, errorThrown) {
+                data.status = ProcessStatus.Error;
+                data.message = jqXhr.responseText;
+                callback(data);
+            },
+            success(result, textStatus, jqXhr) {
+                data.status = ProcessStatus.Success;
+                callback(data);
+            }
+        });
+    }
+
+    ////////////////////////////
+
+    deleteSeries(seriesId: string, callback: (data: any) => void) {
+        let data: any = {};
+        $.ajax({
+            url: this.submittedSeriesDetailsUrl + "/" + seriesId,
+            type: "DELETE",
+            error(jqXhr, textStatus, errorThrown) {
+                data.status = ProcessStatus.Error;
+                data.message = jqXhr.responseText;
+                callback(data);
+            },
+            success(result, textStatus, jqXhr) {
                 data.status = ProcessStatus.Success;
                 callback(data);
             }
