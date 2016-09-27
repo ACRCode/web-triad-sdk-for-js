@@ -39,11 +39,16 @@
 
     submitFiles(files: IFileExt[], metadata: ItemData[], uploadAndSubmitListOfFilesProgress: (data: any) => void) {
         var id = this.addListOfFilesForUpload(files);
-        var data: any = {
-            listOfFilesId: id
-        }
-        uploadAndSubmitListOfFilesProgress(data);
-        this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
+
+        var isd = this.isDicom(files[0]);
+        $.when(isd).done((isDicom: boolean) => {
+            this.listsOfFiles[id].isDicom = isDicom;
+            var data: any = {
+                listOfFilesId: id
+            }
+            uploadAndSubmitListOfFilesProgress(data);
+            this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
+        });    
     }
 
     ////////////////////////////////////////////
@@ -56,8 +61,9 @@
             size: 0,
             receiptTransactionUid: $.Deferred(),
             isCanceled: false,
-            submits: []
-        };
+            submits: [],
+            isDicom: false
+    };
 
         if (files.length > 0) {
             let sizeOfFiles = 0;
@@ -225,6 +231,9 @@
                 data.transactionUid = transactionUid;
                 typeOfSubmit = TypeOfSubmit.AddDicomFilesToExistingSubmissionPackage;
                 additionalSubmitTransactionUid = submitData.submissionPackageUid;
+            }
+            if (!listOfFiles.isDicom) {
+                typeOfSubmit = TypeOfSubmit.CreateSubmissionPackage;
             }
 
             const def = listOfFiles.submits.pop().resolve().promise();
@@ -822,6 +831,35 @@
         }
         return size;
     }
+
+    ////////////////////////////
+
+    private isDicom(file: IFileExt): JQueryPromise<boolean> {
+        var deferred = $.Deferred();
+        var chunk = file.slice(128, 132);
+        var reader = new FileReader();
+        reader.onload = () => {
+            var blob = reader.result;
+            var byteArray = new Uint8Array(blob);
+            var result = "";
+            var byte;
+            for (var i = 0; i < 4; i++) {
+                byte = byteArray[i];
+                if (byte === 0) {
+                    break;
+                }
+                result += String.fromCharCode(byte);
+            }
+            if (result !== "DICM") {
+                deferred.resolve(false);
+            } else {
+                deferred.resolve(true);
+            }
+        }
+        reader.readAsArrayBuffer(chunk);
+        return deferred.promise();
+    }
+
 }
 
     ////////////////////////////////////////////////////////////////////////////////////
@@ -833,6 +871,7 @@ class ListOfFilesForUpload {
     receiptTransactionUid: any;
     isCanceled: boolean;
     submits: any[];
+    isDicom: boolean;
 }
 
 class PackageOfFilesForUpload {
