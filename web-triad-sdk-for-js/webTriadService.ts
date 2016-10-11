@@ -415,6 +415,9 @@
     /////////////////////////////////////////
 
     getStudiesDetails(parameters: any, callback: (data: any) => void) {
+
+        parameters = this.arrayOfNameValueToDictionary(parameters);
+
         $.ajax({
             url: this.submittedStudiesDetailsUrl + "?" + $.param(parameters),
             type: "GET",
@@ -473,6 +476,9 @@
     ////////////////////////////
 
     getSeriesDetails(parameters: any, callback: (data: any) => void) {
+
+        parameters = this.arrayOfNameValueToDictionary(parameters);
+
         $.ajax({
             url: this.submittedSeriesDetailsUrl + "?" + $.param(parameters),
             type: "GET",
@@ -584,6 +590,9 @@
     ////////////////////////////
 
     getAnonymizationProfile(parameters: any, callback: (data: any) => void) {
+
+        parameters = this.arrayOfNameValueToDictionary(parameters);
+
         $.ajax({
             url: this.anonymizationProfileUrl + "?" + $.param(parameters),
             type: "GET",
@@ -858,6 +867,14 @@
         }
         reader.readAsArrayBuffer(chunk);
         return deferred.promise();
+    }
+
+    private arrayOfNameValueToDictionary(data) {
+        var result = {};
+        for (let i = 0; i < data.length; i++) {
+            result[data[i].Name] = data[i].Value;
+        }
+        return result;
     }
 
 }
