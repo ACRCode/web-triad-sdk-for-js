@@ -13,6 +13,8 @@
 
     private listsOfFiles: { [id: string]: ListOfFilesForUpload };
 
+    private securityToken: string = null;
+
     //////////////////////////////////////////////////////////////////////////
 
     constructor(serviceSettings: IServiceSettings) {
@@ -269,6 +271,7 @@
     ////////////////////////////
 
     createSubmissionPackage(parameters: SubmissionPackageData, submitFilesProgress: (data: any) => void) {
+        var self = this;
         var data: any = {};
 
         $.ajax({
@@ -276,6 +279,9 @@
             type: "PUT",
             contentType: "application/json; charset=utf-8",
             data: JSON.stringify(parameters),
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr) {
                 data.status = ProcessStatus.Error;
                 data.message = "Error Submit";
@@ -297,6 +303,8 @@
     ////////////////////////////
 
     addDicomFilesToExistingSubmissionPackage(uri: string, parameters: SubmissionPackageData, additionalSubmitFilesProgress: (data: any) => void) {
+        var self = this;
+
         let isContainsTransactionUid = false;
         for (let i = 0; i < parameters.Metadata.length; i++) {
             if (parameters.Metadata[i].Name === "TransactionUID") {
@@ -319,6 +327,9 @@
             type: "POST",
             contentType: "application/json; charset=utf-8",
             data: JSON.stringify(parameters),
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr) {
                 data.status = ProcessStatus.Error;
                 data.message = "Error additionalSubmit";
@@ -337,6 +348,7 @@
     ////////////////////////////
 
     addNonDicomFilesToExistingSubmissionPackage(parameters: SubmissionPackageData, submitFilesProgress: (data: any) => void) {
+        var self = this;
         let isContainsTransactionUid = false;
         for (let i = 0; i < parameters.Metadata.length; i++) {
             if (parameters.Metadata[i].Name === "TransactionUID") {
@@ -359,6 +371,9 @@
             type: "POST",
             contentType: "application/json; charset=utf-8",
             data: JSON.stringify(parameters),
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr) {
                 data.status = ProcessStatus.Error;
                 data.message = "Error attachFiles";
@@ -395,6 +410,9 @@
                 $.ajax({
                     url: this.submissionFileInfoApiUrl + "/" + listOfFiles.transactionUid,
                     type: "DELETE",
+                    beforeSend(xhr) {
+                        xhr.setRequestHeader("Authorization", self.securityToken);
+                    },
                     error(jqXhr, textStatus, errorThrown) {
                         data.status = ProcessStatus.Error;
                         data.message = "Error cancelSubmit";
@@ -415,13 +433,16 @@
     /////////////////////////////////////////
 
     getStudiesDetails(parameters: any, callback: (data: any) => void) {
-
+        var self = this;
         parameters = this.arrayOfNameValueToDictionary(parameters);
 
         $.ajax({
             url: this.submittedStudiesDetailsUrl + "?" + $.param(parameters),
             type: "GET",
             dataType: "json",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 let data: any = {};
                 data.status = ProcessStatus.Error;
@@ -438,10 +459,14 @@
     ////////////////////////////
 
     deleteStudy(studyId: string, callback: (data: any) => void) {
+        var self = this;
         let data: any = {};
         $.ajax({
             url: this.submittedStudiesDetailsUrl + "/" + studyId,
             type: "DELETE",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 data.status = ProcessStatus.Error;
                 data.message = jqXhr.responseText;
@@ -457,10 +482,14 @@
     ////////////////////////////
 
     deleteSeries(seriesId: string, callback: (data: any) => void) {
+        var self = this;
         let data: any = {};
         $.ajax({
             url: this.submittedSeriesDetailsUrl + "/" + seriesId,
             type: "DELETE",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 data.status = ProcessStatus.Error;
                 data.message = jqXhr.responseText;
@@ -476,13 +505,16 @@
     ////////////////////////////
 
     getSeriesDetails(parameters: any, callback: (data: any) => void) {
-
+        var self = this;
         parameters = this.arrayOfNameValueToDictionary(parameters);
 
         $.ajax({
             url: this.submittedSeriesDetailsUrl + "?" + $.param(parameters),
             type: "GET",
             dataType: "json",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 let data: any = {};
                 data.status = ProcessStatus.Error;
@@ -499,6 +531,8 @@
     ///////////////////////////
 
     getFileListByStudyId(studyId: number, callback: (data: any) => void) {
+        var self = this;
+
         const parameters = {};
         if (studyId !== undefined) {
             parameters["DicomDataStudyID"] = studyId;
@@ -508,6 +542,9 @@
             url: this.submittedFilesDetailsUrl + "?" + $.param(parameters),
             type: "GET",
             dataType: 'json',
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 let data: any = {};
                 data.status = ProcessStatus.Error;
@@ -524,12 +561,16 @@
     ////////////////////////////
 
     openViewer(parameters: any, callback: (data: any) => void) {
+        var self = this;
         let data: any = {};
         $.ajax({
             url: this.dicomViewerUrl,
             type: "PUT",
             contentType: "application/json; charset=utf-8",
             data: JSON.stringify(parameters),
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
 
                 data.status = ProcessStatus.Error;
@@ -554,6 +595,9 @@
         $.ajax({
             url: this.submittedFilesDetailsUrl + "/" + id + "/downloadUrl",
             type: "GET",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 data.status = ProcessStatus.Error;
                 data.message = jqXhr.responseText;
@@ -571,10 +615,14 @@
     /////////////////////////////
 
     deleteFile(id: number, callback: (data: any) => void) {
+        var self = this;
         let data: any = {};
         $.ajax({
             url: this.submittedFilesDetailsUrl + "/" + id,
             type: "DELETE",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 data.status = ProcessStatus.Error;
                 data.message = jqXhr.responseText;
@@ -590,13 +638,16 @@
     ////////////////////////////
 
     getAnonymizationProfile(parameters: any, callback: (data: any) => void) {
-
+        var self = this;
         parameters = this.arrayOfNameValueToDictionary(parameters);
 
         $.ajax({
             url: this.anonymizationProfileUrl + "?" + $.param(parameters),
             type: "GET",
             dataType: 'json',
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 let data: any = {};
                 data.status = ProcessStatus.Error;
@@ -613,9 +664,16 @@
         });
     }
 
+    ////////////////////////////
+
+    setSecurityToken(token: string) {
+        this.securityToken = token;
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////
 
     private deleteFileFromStage(file: IFileExt) {
+        var self = this;
         var callback = file.cancelUploadFileProgress;
         var data: any = {};
         data.listOfFilesId = file.listOfFilesId;
@@ -623,6 +681,9 @@
         $.ajax({
             url: this.fileApiUrl + "/" + file.uri,
             type: "DELETE",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
             error(jqXhr, textStatus, errorThrown) {
                 data.status = ProcessStatus.Error;
                 data.message = "ERROR CANCEL UPLOAD FILE";
@@ -669,6 +730,9 @@
                 contentType: false,
                 processData: false,
                 data: formData,
+                beforeSend(xhr) {
+                    xhr.setRequestHeader("Authorization", self.securityToken);
+                },
                 error(jqXhr) {
                     data.status = ProcessStatus.Error;
                     data.message = "File is not uploaded";
@@ -720,6 +784,7 @@
         };
 
         function sendChunk(start: number, end: number, chunkNumber: number) {
+            var self = this;
             if (!addRequest()) {
                 return;
             }
@@ -734,6 +799,9 @@
                 contentType: false,
                 processData: false,
                 type: "POST",
+                beforeSend(xhr) {
+                    xhr.setRequestHeader("Authorization", self.securityToken);
+                },
                 error(jqXhr) {
                     pendingRequests--;
                     self.setFileStatus(file, FileStatus.UploadError);
