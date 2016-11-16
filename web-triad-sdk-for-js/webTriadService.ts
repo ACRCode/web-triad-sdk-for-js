@@ -105,6 +105,7 @@
         for (let i = 0; i < metadata.length; i++) {
             if (metadata[i].Name === "TypeOfSubmit") {
                 typeOfSubmit = metadata[i].Value;
+                metadata.splice(i,1);
                 break;
             }
         }
@@ -784,7 +785,6 @@
         };
 
         function sendChunk(start: number, end: number, chunkNumber: number) {
-            var self = this;
             if (!addRequest()) {
                 return;
             }
