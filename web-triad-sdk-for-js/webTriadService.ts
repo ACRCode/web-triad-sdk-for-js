@@ -50,7 +50,9 @@
             }
             uploadAndSubmitListOfFilesProgress(data);
             this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
-        });    
+        });
+
+        return id;
     }
 
     ////////////////////////////////////////////
@@ -125,7 +127,30 @@
             }
         }
 
-        processingNextPackage();
+        //..
+
+        const submissionPackageParameters = {
+            FileUris: [],
+            Metadata: metadata
+        }
+
+        self.createSubmissionPackage(submissionPackageParameters, createSubmissionPackageProgress);
+
+        function createSubmissionPackageProgress(submitData: any) {
+            if (typeOfSubmit === TypeOfSubmit.CreateSubmissionPackage) {
+                transactionUid = submitData.transactionUid;
+                listOfFiles.transactionUid = transactionUid;
+                data.transactionUid = transactionUid;
+                typeOfSubmit = TypeOfSubmit.AddDicomFilesToExistingSubmissionPackage;
+                additionalSubmitTransactionUid = submitData.submissionPackageUid;
+                listOfFiles.receiptTransactionUid.resolve().promise();
+
+                processingNextPackage();
+            }
+        }
+
+
+        //processingNextPackage();
 
         function processingNextPackage() {
             currentPackage.files = getNextFilesForPackage();
@@ -285,7 +310,7 @@
             },
             error(jqXhr) {
                 data.status = ProcessStatus.Error;
-                data.message = "Error Submit";
+                data.message = "Error Submit Create SubmitPackage";
                 data.details = jqXhr.responseText;
                 data.errorCode = jqXhr.status;
                 submitFilesProgress(data);
@@ -295,7 +320,7 @@
                 data.submissionPackageUid = url;
                 data.transactionUid = url;
                 data.status = ProcessStatus.Success;
-                data.message = "Success Submit";
+                data.message = "Success Create SubmitPackage";
                 submitFilesProgress(data);
             }
         });
