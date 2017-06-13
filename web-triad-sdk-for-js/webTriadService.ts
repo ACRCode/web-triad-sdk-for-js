@@ -42,15 +42,12 @@
     submitFiles(files: IFileExt[], metadata: ItemData[], uploadAndSubmitListOfFilesProgress: (data: any) => void) {
         var id = this.addListOfFilesForUpload(files);
 
-        var isd = this.isDicom(files[0]);
-        $.when(isd).done((isDicom: boolean) => {
-            this.listsOfFiles[id].isDicom = isDicom;
-            var data: any = {
-                listOfFilesId: id
-            }
-            uploadAndSubmitListOfFilesProgress(data);
-            this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
-        });
+        this.listsOfFiles[id].isDicom = true;
+        var data: any = {
+            listOfFilesId: id
+        }
+        uploadAndSubmitListOfFilesProgress(data);
+        this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
 
         return id;
     }
@@ -148,9 +145,6 @@
                 processingNextPackage();
             }
         }
-
-
-        //processingNextPackage();
 
         function processingNextPackage() {
             currentPackage.files = getNextFilesForPackage();
@@ -267,9 +261,14 @@
             const def = listOfFiles.submits.pop().resolve().promise();
             listOfFiles.submits.push(def);
 
+            data.statusCode = submitData.statusCode;
+
             switch (submitData.status) {
                 case ProcessStatus.Success:
                     listOfFiles.receiptTransactionUid.resolve().promise();
+
+                    data.skippedFiles = submitData.skippedFiles;
+
                     if (finishFileNumberInPackage < listOfFiles.files.length) {
                         data.status = ProcessStatus.InProgress;
                         data.message = "InProgress";
@@ -286,7 +285,7 @@
                     break;
                 case ProcessStatus.Error:
                     data.status = ProcessStatus.Error;
-                    data.message = "Error";
+                    data.message = "Error";                   
                     uploadAndSubmitListOfFilesProgress(data);
                     break;
                 default:
@@ -312,11 +311,12 @@
                 data.status = ProcessStatus.Error;
                 data.message = "Error Submit Create SubmitPackage";
                 data.details = jqXhr.responseText;
-                data.errorCode = jqXhr.status;
+                data.statusCode = jqXhr.status;
                 submitFilesProgress(data);
             },
             success(result, textStatus, jqXhr) {
                 const url = jqXhr.getResponseHeader("Location");
+                data.statusCode = jqXhr.status;
                 data.submissionPackageUid = url;
                 data.transactionUid = url;
                 data.status = ProcessStatus.Success;
@@ -360,10 +360,12 @@
                 data.status = ProcessStatus.Error;
                 data.message = "Error additionalSubmit";
                 data.details = jqXhr.responseText;
-                data.errorCode = jqXhr.status;
+                data.statusCode = jqXhr.status;
                 additionalSubmitFilesProgress(data);
             },
-            success() {
+            success(result, textStatus, jqXhr) {
+                data.skippedFiles = result;
+                data.statusCode = jqXhr.status;
                 data.status = ProcessStatus.Success;
                 data.message = "Success additionalSubmit";
                 additionalSubmitFilesProgress(data);
@@ -404,10 +406,11 @@
                 data.status = ProcessStatus.Error;
                 data.message = "Error attachFiles";
                 data.details = jqXhr.responseText;
-                data.errorCode = jqXhr.status;
+                data.statusCode = jqXhr.status;
                 submitFilesProgress(data);
             },
-            success() {
+            success(result, textStatus, jqXhr) {
+                data.statusCode = jqXhr.status;
                 data.status = ProcessStatus.Success;
                 data.message = "Success attachFiles";
                 submitFilesProgress(data);
@@ -443,10 +446,11 @@
                         data.status = ProcessStatus.Error;
                         data.message = "Error cancelSubmit";
                         data.details = jqXhr.responseText;
-                        data.errorCode = jqXhr.status;
+                        data.statusCode = jqXhr.status;
                         cancelSubmitProgress(data);
                     },
                     success(result, textStatus, jqXhr) {
+                        data.statusCode = jqXhr.status;
                         data.status = ProcessStatus.Success;
                         data.message = "Success cancelSubmit";
                         cancelSubmitProgress(data);
@@ -714,10 +718,11 @@
                 data.status = ProcessStatus.Error;
                 data.message = "ERROR CANCEL UPLOAD FILE";
                 data.details = jqXhr.responseText;
-                data.errorCode = jqXhr.status;
+                data.statusCode = jqXhr.status;
                 callback(data);
             },
             success(result, textStatus, jqXhr) {
+                data.statusCode = jqXhr.status;
                 data.status = ProcessStatus.Success;
                 data.progress = 0;
                 data.progressBytes = 0;
