@@ -276,7 +276,7 @@
                         processingNextPackage();
                         return;
                     }
-
+                    self.deleteTransaction(transactionUid);
                     data.test = numberOfUploadedBytes + "///" + listOfFiles.size;
                     data.status = ProcessStatus.Success;
                     data.message = "Success";
@@ -661,6 +661,29 @@
             success(result, text, jqXhr) {
                 data.status = ProcessStatus.Success;
                 callback(data);
+            }
+        });
+    }
+
+    ////////////////////////////
+
+    deleteTransaction(uri: string){
+        var self = this;
+        let data: any = {};
+        $.ajax({
+            url: this.submissionFileInfoApiUrl + "/transaction/" + uri,
+            type: "DELETE",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error(jqXhr, textStatus, errorThrown) {
+                data.status = ProcessStatus.Error;
+                data.message = jqXhr.responseText;
+                //callback(data);
+            },
+            success(result, text, jqXhr) {
+                data.status = ProcessStatus.Success;
+                //callback(data);
             }
         });
     }
