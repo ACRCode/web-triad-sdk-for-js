@@ -262,7 +262,7 @@
             listOfFiles.submits.push(def);
 
             data.statusCode = submitData.statusCode;
-
+            
             switch (submitData.status) {
                 case ProcessStatus.Success:
                     listOfFiles.receiptTransactionUid.resolve().promise();
@@ -273,6 +273,7 @@
                         data.status = ProcessStatus.InProgress;
                         data.message = "InProgress";
                         uploadAndSubmitListOfFilesProgress(data);
+                        delete data.skippedFiles;
                         processingNextPackage();
                         return;
                     }
@@ -281,7 +282,7 @@
                     data.status = ProcessStatus.Success;
                     data.message = "Success";
                     uploadAndSubmitListOfFilesProgress(data);
-
+                    delete data.skippedFiles;
                     break;
                 case ProcessStatus.Error:
                     data.status = ProcessStatus.Error;
