@@ -1,4 +1,4 @@
-﻿class WebTriadService{
+﻿class WebTriadService {
     private self = this;
 
     private fileApiUrl = "/files";
@@ -41,7 +41,6 @@
 
     submitFiles(files: IFileExt[], metadata: ItemData[], uploadAndSubmitListOfFilesProgress: (data: any) => void) {
         var id = this.addListOfFilesForUpload(files);
-
         this.listsOfFiles[id].isDicom = true;
         var data: any = {
             listOfFilesId: id
@@ -57,14 +56,13 @@
     addListOfFilesForUpload(files: IFileExt[]): string {
         const listOfFilesId = this.getGuid();
         this.listsOfFiles[listOfFilesId] = {
+            submissionPackage: null,
             files: [],
-            transactionUid: null,
             size: 0,
-            receiptTransactionUid: $.Deferred(),
             isCanceled: false,
             submits: [],
             isDicom: false
-    };
+        };
 
         if (files.length > 0) {
             let sizeOfFiles = 0;
@@ -91,59 +89,27 @@
 
         var numberOfUploadedBytes = 0;
 
-        var additionalSubmitTransactionUid: string;
-        var transactionUid: string = null;
+        var submissionPackage = new SubmissionPackage();
 
         var data: any = {};
         data.listOfFilesId = listOfFilesId;
 
         var currentPackage = new PackageOfFilesForUpload();
 
-        var typeOfSubmit = TypeOfSubmit.CreateSubmissionPackage;
-
-        for (let i = 0; i < metadata.length; i++) {
-            if (metadata[i].Name === "TypeOfSubmit") {
-                typeOfSubmit = metadata[i].Value;
-                metadata.splice(i,1);
-                break;
-            }
-        }
-
-        if (typeOfSubmit !== TypeOfSubmit.CreateSubmissionPackage) {
-            transactionUid = self.getGuid();
-            listOfFiles.transactionUid = transactionUid;
-            listOfFiles.receiptTransactionUid.resolve().promise();          
-        }
-
-        if (typeOfSubmit === TypeOfSubmit.AddDicomFilesToExistingSubmissionPackage) {
-            for (let i = 0; i < metadata.length; i++) {
-                if (metadata[i].Name === "AdditionalSubmitTransactionUID") {
-                    additionalSubmitTransactionUid = metadata[i].Value;
-                    break;
-                }
-            }
-        }
-
-        //..
-
-        const submissionPackageParameters = {
-            FileUris: [],
+        const initialSubmissionPackageResource = {
             Metadata: metadata
         }
 
-        self.createSubmissionPackage(submissionPackageParameters, createSubmissionPackageProgress);
+        self.createSubmissionPackage(initialSubmissionPackageResource, createSubmissionPackageProgress);
 
         function createSubmissionPackageProgress(submitData: any) {
-            if (typeOfSubmit === TypeOfSubmit.CreateSubmissionPackage) {
-                transactionUid = submitData.transactionUid;
-                listOfFiles.transactionUid = transactionUid;
-                data.transactionUid = transactionUid;
-                typeOfSubmit = TypeOfSubmit.AddDicomFilesToExistingSubmissionPackage;
-                additionalSubmitTransactionUid = submitData.submissionPackageUid;
-                listOfFiles.receiptTransactionUid.resolve().promise();
-
-                processingNextPackage();
+            if (submitData.status === ProcessStatus.Error) {
+                uploadAndSubmitListOfFilesProgress(submitData);
+                return;
             }
+            listOfFiles.submissionPackage = submitData.submissionPackage;
+            submissionPackage = submitData.submissionPackage;
+            processingNextPackage();
         }
 
         function processingNextPackage() {
@@ -160,7 +126,7 @@
         }
 
         function uploadNextFileFromPackage() {
-            if (listOfFiles.isCanceled ) return;
+            if (listOfFiles.isCanceled) return;
 
             const file = currentPackage.files.splice(0, 1)[0];
             self.uploadFile(file, uploadFileProgress);
@@ -173,136 +139,103 @@
         }
 
         function uploadFileProgress(uploadData: any) {
-            ////data.uploadFileData = uploadData;
             switch (uploadData.status) {
-                case ProcessStatus.Success:
-                    if (listOfFiles.isCanceled) {
-                        data.status = ProcessStatus.Success;
-                        data.message = "CancelSubmit";
-                        data.progress = 0;
-                        data.progressBytes = 0;
-                        uploadAndSubmitListOfFilesProgress(data);
-                        return;
-                    }
-                    numberOfUploadedBytes += uploadData.blockSize;
-
-                    data.status = ProcessStatus.InProgress;
-                    data.message = "InProgress";
-                    data.progress = Math.ceil(numberOfUploadedBytes / listOfFiles.size * 100);
-                    data.progressBytes = numberOfUploadedBytes;
-
-                    currentPackage.urisOfUploadedFiles.push(uploadData.fileUri);
-                    currentPackage.numberOfUploadedFiles++;
-                    if (currentPackage.numberOfUploadedFiles === currentPackage.numberOfFiles) {
-
-                        const parameters = {
-                            FileUris: currentPackage.urisOfUploadedFiles,
-                            Metadata: metadata
-                        }
-
-                        listOfFiles.submits.push($.Deferred());
-
-                        switch (typeOfSubmit) {
-                            case TypeOfSubmit.CreateSubmissionPackage:
-                                self.createSubmissionPackage(parameters, submitFilesProgress);
-                                break;
-                            case TypeOfSubmit.AddDicomFilesToExistingSubmissionPackage:
-                                data.transactionUid = transactionUid;
-                                parameters.Metadata = [
-                                    new ItemData("TransactionUID", transactionUid)
-                                ];
-                                self.addDicomFilesToExistingSubmissionPackage(additionalSubmitTransactionUid, parameters, submitFilesProgress);
-                                break;
-                            case TypeOfSubmit.AddNonDicomFilesToExistingSubmissionPackage:
-                                data.transactionUid = transactionUid;
-                                parameters.Metadata.push(new ItemData("TransactionUID", transactionUid));
-                                self.addNonDicomFilesToExistingSubmissionPackage(parameters, submitFilesProgress);
-                                break;
-                            default:
-                        }
-                        return;
-                    }
+            case ProcessStatus.Success:
+                if (listOfFiles.isCanceled) {
+                    data.status = ProcessStatus.Success;
+                    data.message = "CancelSubmit";
+                    data.progress = 0;
+                    data.progressBytes = 0;
                     uploadAndSubmitListOfFilesProgress(data);
-                    uploadNextFileFromPackage();
-                    break;
-                case ProcessStatus.InProgress:
-                    numberOfUploadedBytes += uploadData.blockSize;
+                    return;
+                }
+                numberOfUploadedBytes += uploadData.blockSize;
 
-                    data.status = ProcessStatus.InProgress;
-                    data.message = "InProgress";
-                    data.progress = Math.ceil(numberOfUploadedBytes / listOfFiles.size * 100);
-                    data.progressBytes = numberOfUploadedBytes;
+                data.status = ProcessStatus.InProgress;
+                data.message = "InProgress";
+                data.progress = Math.ceil(numberOfUploadedBytes / listOfFiles.size * 100);
+                data.progressBytes = numberOfUploadedBytes;
 
-                    uploadAndSubmitListOfFilesProgress(data);
-                    break;
+                currentPackage.urisOfUploadedFiles.push(uploadData.fileUri);
+                currentPackage.numberOfUploadedFiles++;
+                if (currentPackage.numberOfUploadedFiles === currentPackage.numberOfFiles) {
 
-                case ProcessStatus.Error:
-                    data.status = ProcessStatus.Error;
-                    data.message = "Error";
-                    uploadAndSubmitListOfFilesProgress(data);
-                    break;
+                    const parameters = currentPackage.urisOfUploadedFiles;
 
-                default:
+                    listOfFiles.submits.push($.Deferred());
+
+                    self.addDicomFilesToExistingSubmissionPackage(submissionPackage.Id, parameters, submitFilesProgress);
+                    return;
+                }
+                uploadAndSubmitListOfFilesProgress(data);
+                uploadNextFileFromPackage();
+                break;
+            case ProcessStatus.InProgress:
+                numberOfUploadedBytes += uploadData.blockSize;
+
+                data.status = ProcessStatus.InProgress;
+                data.message = "InProgress";
+                data.progress = Math.ceil(numberOfUploadedBytes / listOfFiles.size * 100);
+                data.progressBytes = numberOfUploadedBytes;
+
+                uploadAndSubmitListOfFilesProgress(data);
+                break;
+
+            case ProcessStatus.Error:
+                data.status = ProcessStatus.Error;
+                data.message = "Error";
+                uploadAndSubmitListOfFilesProgress(data);
+                break;
+
+            default:
             }
         }
         function submitFilesProgress(submitData: any) {
-            ///data.submitFilesData = submitData;
-            if (typeOfSubmit === TypeOfSubmit.CreateSubmissionPackage) {
-                transactionUid = submitData.transactionUid;
-                listOfFiles.transactionUid = transactionUid;
-                data.transactionUid = transactionUid;
-                typeOfSubmit = TypeOfSubmit.AddDicomFilesToExistingSubmissionPackage;
-                additionalSubmitTransactionUid = submitData.submissionPackageUid;
-            }
-            if (!listOfFiles.isDicom) {
-                typeOfSubmit = TypeOfSubmit.CreateSubmissionPackage;
-            }
-
             const def = listOfFiles.submits.pop().resolve().promise();
             listOfFiles.submits.push(def);
 
             data.statusCode = submitData.statusCode;
-            
+
             switch (submitData.status) {
-                case ProcessStatus.Success:
-                    listOfFiles.receiptTransactionUid.resolve().promise();
+            case ProcessStatus.Success:
+                data.skippedFiles = submitData.skippedFiles;
 
-                    data.skippedFiles = submitData.skippedFiles;
-
-                    if (finishFileNumberInPackage < listOfFiles.files.length) {
-                        data.status = ProcessStatus.InProgress;
-                        data.message = "InProgress";
-                        uploadAndSubmitListOfFilesProgress(data);
-                        delete data.skippedFiles;
-                        processingNextPackage();
-                        return;
-                    }
-                    self.deleteTransaction(transactionUid);
-                    data.test = numberOfUploadedBytes + "///" + listOfFiles.size;
-                    data.status = ProcessStatus.Success;
-                    data.message = "Success";
+                if (finishFileNumberInPackage < listOfFiles.files.length) {
+                    data.status = ProcessStatus.InProgress;
+                    data.message = "InProgress";
                     uploadAndSubmitListOfFilesProgress(data);
                     delete data.skippedFiles;
-                    break;
-                case ProcessStatus.Error:
-                    data.status = ProcessStatus.Error;
-                    data.message = "Error";                   
-                    uploadAndSubmitListOfFilesProgress(data);
-                    break;
-                default:
+                    processingNextPackage();
+                    return;
+                }
+
+                self.submitSubmissionPackage(submissionPackage.Id);
+                //self.deleteTransaction(transactionUid); need to send the request for submitting
+                data.test = numberOfUploadedBytes + "///" + listOfFiles.size;
+                data.status = ProcessStatus.Success;
+                data.message = "Success";
+                uploadAndSubmitListOfFilesProgress(data);
+                delete data.skippedFiles;
+                break;
+            case ProcessStatus.Error:
+                data.status = ProcessStatus.Error;
+                data.message = "Error";
+                uploadAndSubmitListOfFilesProgress(data);
+                break;
+            default:
             }
         }
     }
 
     ////////////////////////////
 
-    createSubmissionPackage(parameters: SubmissionPackageData, submitFilesProgress: (data: any) => void) {
+    createSubmissionPackage(parameters: InitialSubmissionPackageResource, submitFilesProgress: (data: any) => void) {
         var self = this;
         var data: any = {};
 
         $.ajax({
             url: this.submissionFileInfoApiUrl,
-            type: "PUT",
+            type: "POST",
             contentType: "application/json; charset=utf-8",
             data: JSON.stringify(parameters),
             beforeSend(xhr) {
@@ -316,12 +249,10 @@
                 submitFilesProgress(data);
             },
             success(result, textStatus, jqXhr) {
-                const url = jqXhr.getResponseHeader("Location");
                 data.statusCode = jqXhr.status;
-                data.submissionPackageUid = url;
-                data.transactionUid = url;
                 data.status = ProcessStatus.Success;
                 data.message = "Success Create SubmitPackage";
+                data.submissionPackage = result;
                 submitFilesProgress(data);
             }
         });
@@ -329,31 +260,21 @@
 
     ////////////////////////////
 
-    addDicomFilesToExistingSubmissionPackage(uri: string, parameters: SubmissionPackageData, additionalSubmitFilesProgress: (data: any) => void) {
+    addDicomFilesToExistingSubmissionPackage(uri: string, parameters: string[], additionalSubmitFilesProgress: (data: any) => void) {
         var self = this;
-
-        let isContainsTransactionUid = false;
-        for (let i = 0; i < parameters.Metadata.length; i++) {
-            if (parameters.Metadata[i].Name === "TransactionUID") {
-                isContainsTransactionUid = true;
-                break;
-            }
-        }
-        if (!isContainsTransactionUid) {
-            parameters.Metadata.push(
-            {
-                Name: "TransactionUID",
-                Value: this.getGuid()
-            });
-        }
-
         var data: any = {};
 
+        var filesUris = [];
+
+        for (let uri of parameters) {
+            filesUris.push({ Id: uri });
+        }
+
         $.ajax({
-            url: this.submissionFileInfoApiUrl + "/" + uri,
+            url: this.submissionFileInfoApiUrl + "/" + uri + "/files",
             type: "POST",
             contentType: "application/json; charset=utf-8",
-            data: JSON.stringify(parameters),
+            data: JSON.stringify(filesUris),
             beforeSend(xhr) {
                 xhr.setRequestHeader("Authorization", self.securityToken);
             },
@@ -374,7 +295,7 @@
         });
     }
 
-    ////////////////////////////
+    //////////////////////////// It doesn't work
 
     addNonDicomFilesToExistingSubmissionPackage(parameters: SubmissionPackageData, submitFilesProgress: (data: any) => void) {
         var self = this;
@@ -387,10 +308,10 @@
         }
         if (!isContainsTransactionUid) {
             parameters.Metadata.push(
-            {
-                Name: "TransactionUID",
-                Value: this.getGuid()
-            });
+                {
+                    Name: "TransactionUID",
+                    Value: this.getGuid()
+                });
         }
 
         var data: any = {};
@@ -436,27 +357,28 @@
                     this.deleteFileFromStage(listOfFiles.files[i]);
                 }
             }
-            $.when(listOfFiles.receiptTransactionUid).done(() => {
-                $.ajax({
-                    url: this.submissionFileInfoApiUrl + "/" + listOfFiles.transactionUid,
-                    type: "DELETE",
-                    beforeSend(xhr) {
-                        xhr.setRequestHeader("Authorization", self.securityToken);
-                    },
-                    error(jqXhr, textStatus, errorThrown) {
-                        data.status = ProcessStatus.Error;
-                        data.message = "Error cancelSubmit";
-                        data.details = jqXhr.responseText;
-                        data.statusCode = jqXhr.status;
-                        cancelSubmitProgress(data);
-                    },
-                    success(result, textStatus, jqXhr) {
-                        data.statusCode = jqXhr.status;
-                        data.status = ProcessStatus.Success;
-                        data.message = "Success cancelSubmit";
-                        cancelSubmitProgress(data);
-                    }
-                });
+            //check!!
+            //$.when(listOfFiles.receiptTransactionUid).done(() => {
+            $.ajax({
+                url: this.submissionFileInfoApiUrl + "/" + listOfFiles.submissionPackage.Id,//!!
+                type: "DELETE",
+                beforeSend(xhr) {
+                    xhr.setRequestHeader("Authorization", self.securityToken);
+                },
+                error(jqXhr, textStatus, errorThrown) {
+                    data.status = ProcessStatus.Error;
+                    data.message = "Error cancelSubmit";
+                    data.details = jqXhr.responseText;
+                    data.statusCode = jqXhr.status;
+                    cancelSubmitProgress(data);
+                },
+                success(result, textStatus, jqXhr) {
+                    data.statusCode = jqXhr.status;
+                    data.status = ProcessStatus.Success;
+                    data.message = "Success cancelSubmit";
+                    cancelSubmitProgress(data);
+                }
+                //});
             });
         });
     }
@@ -512,29 +434,6 @@
 
     ////////////////////////////
 
-    deleteSeries(seriesId: string, callback: (data: any) => void) {
-        var self = this;
-        let data: any = {};
-        $.ajax({
-            url: this.submittedSeriesDetailsUrl + "/" + seriesId,
-            type: "DELETE",
-            beforeSend(xhr) {
-                xhr.setRequestHeader("Authorization", self.securityToken);
-            },
-            error(jqXhr, textStatus, errorThrown) {
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
-            },
-            success(result, textStatus, jqXhr) {
-                data.status = ProcessStatus.Success;
-                callback(data);
-            }
-        });
-    }
-
-    ////////////////////////////
-
     getSeriesDetails(parameters: any, callback: (data: any) => void) {
         var self = this;
         parameters = this.arrayOfNameValueToDictionary(parameters);
@@ -560,6 +459,29 @@
     }
 
     ///////////////////////////
+
+    deleteSeries(seriesId: string, callback: (data: any) => void) {
+        var self = this;
+        let data: any = {};
+        $.ajax({
+            url: this.submittedSeriesDetailsUrl + "/" + seriesId,
+            type: "DELETE",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error(jqXhr, textStatus, errorThrown) {
+                data.status = ProcessStatus.Error;
+                data.message = jqXhr.responseText;
+                callback(data);
+            },
+            success(result, textStatus, jqXhr) {
+                data.status = ProcessStatus.Success;
+                callback(data);
+            }
+        });
+    }
+
+    ////////////////////////////
 
     getFileListByStudyId(studyId: number, callback: (data: any) => void) {
         var self = this;
@@ -668,7 +590,30 @@
 
     ////////////////////////////
 
-    deleteTransaction(uri: string){
+    submitSubmissionPackage(uri: string) {
+        var self = this;
+        let data: any = {};
+        $.ajax({
+            url: this.submissionFileInfoApiUrl + "/" + uri + "/submit",
+            type: "POST",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error(jqXhr, textStatus, errorThrown) {
+                data.status = ProcessStatus.Error;
+                data.message = jqXhr.responseText;
+                //callback(data);
+            },
+            success(result, text, jqXhr) {
+                data.status = ProcessStatus.Success;
+                //callback(data);
+            }
+        });
+    }
+
+    ////////////////////////////
+
+    deleteTransaction(uri: string) {
         var self = this;
         let data: any = {};
         $.ajax({
@@ -934,22 +879,22 @@
         file.status = status;
 
         switch (status) {
-            case FileStatus.Ready:
-                break;
-            case FileStatus.Uploading:
-                break;
-            case FileStatus.Uploaded:
-                break;
-            case FileStatus.UploadError:
-                break;
-            case FileStatus.Canceling:
-                break;
-            case FileStatus.Canceled:
-                break;
-            case FileStatus.CancelError:
-                break;
-            default:
-                break;
+        case FileStatus.Ready:
+            break;
+        case FileStatus.Uploading:
+            break;
+        case FileStatus.Uploaded:
+            break;
+        case FileStatus.UploadError:
+            break;
+        case FileStatus.Canceling:
+            break;
+        case FileStatus.Canceled:
+            break;
+        case FileStatus.CancelError:
+            break;
+        default:
+            break;
         }
     }
 
@@ -1001,13 +946,12 @@
 
 }
 
-    ////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////
 
 class ListOfFilesForUpload {
-    transactionUid: string;
+    submissionPackage: SubmissionPackage;
     files: IFileExt[];
     size: number;
-    receiptTransactionUid: any;
     isCanceled: boolean;
     submits: any[];
     isDicom: boolean;
@@ -1019,6 +963,24 @@ class PackageOfFilesForUpload {
     numberOfFiles: number;
     packageSize: number;
     urisOfUploadedFiles: string[];
+}
+
+class InitialSubmissionPackageResource {
+    Metadata: ItemData[];
+}
+
+
+class SubmissionPackage {
+    Id: string;
+    CreationTime: Date;
+    LastUpdateTime: Date;
+    Status: SubmissionPackageStatus;
+    Metadata: ItemData[];
+
+}
+
+enum SubmissionPackageStatus {
+    Pending
 }
 
 class SubmissionPackageData {
@@ -1064,12 +1026,6 @@ enum FileStatus {
     Canceling,
     Canceled,
     CancelError
-}
-
-enum TypeOfSubmit {
-    CreateSubmissionPackage,
-    AddDicomFilesToExistingSubmissionPackage,
-    AddNonDicomFilesToExistingSubmissionPackage
 }
 
 enum ProcessStatus {
