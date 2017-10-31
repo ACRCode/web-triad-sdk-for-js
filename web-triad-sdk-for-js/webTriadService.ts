@@ -127,10 +127,11 @@
         }
 
         function uploadFileProgress(uploadData: FileProgressData) {
+            progressData.processStep = ProcessStep.Uploading;
             switch (uploadData.processStatus) {
                 case ProcessStatus.Success:
                     if (listOfFiles.isCanceled) {
-                        progressData.processStatus = ProcessStatus.Success;
+                        progressData.processStatus = ProcessStatus.Success;                     
                         progressData.message = "CancelSubmit";
                         progressData.progress = 0;
                         progressData.progressBytes = 0;
@@ -152,7 +153,7 @@
 
                         listOfFiles.submits.push($.Deferred());
 
-                        self.addDicomFilesToExistingSubmissionPackage(submissionPackage.Id, parameters, submitFilesProgress);
+                        self.addDicomFilesToExistingSubmissionPackage(submissionPackage.Id, parameters, addDicomFilesProgress);
                         return;
                     }
                     uploadAndSubmitListOfFilesProgress(progressData);
@@ -178,10 +179,10 @@
                 default:
             }
         }
-        function submitFilesProgress(data: SubmissionProgressData) {
+        function addDicomFilesProgress(data: SubmissionProgressData) {
             const def = listOfFiles.submits.pop().resolve().promise();
             listOfFiles.submits.push(def);
-
+            progressData.processStep = ProcessStep.Uploading;
             progressData.statusCode = data.statusCode;
 
             switch (data.processStatus) {
@@ -193,11 +194,12 @@
                         uploadAndSubmitListOfFilesProgress(progressData);
                         processingNextPackage();
                         return;
-                    }
-                    self.submitSubmissionPackage(submissionPackage.Id);
+                    }                   
                     progressData.processStatus = ProcessStatus.Success;
                     progressData.message = "Success";
                     uploadAndSubmitListOfFilesProgress(progressData);
+
+                    self.submitSubmissionPackage(submissionPackage.Id, uploadAndSubmitListOfFilesProgress);
                     break;
                 case ProcessStatus.Error:
                     progressData.processStatus = ProcessStatus.Error;
@@ -242,7 +244,7 @@
 
     ////////////////////////////
 
-    addDicomFilesToExistingSubmissionPackage(uri: string, parameters: string[], additionalSubmitFilesProgress: (progressData: SubmissionProgressData) => void) {
+    addDicomFilesToExistingSubmissionPackage(uri: string, parameters: string[], addDicomFilesProgress: (progressData: SubmissionProgressData) => void) {
         var self = this;
         var progressData = new SubmissionProgressData();
         var filesUris = [];
@@ -263,23 +265,24 @@
                 progressData.message = "Error additionalSubmit";
                 progressData.details = jqXhr.responseText;
                 progressData.statusCode = jqXhr.status;
-                additionalSubmitFilesProgress(progressData);
+                addDicomFilesProgress(progressData);
             },
             success(result, textStatus, jqXhr) {
                 //progressData.skippedFiles = result;
                 progressData.statusCode = jqXhr.status;
                 progressData.processStatus = ProcessStatus.Success;
                 progressData.message = "Success additionalSubmit";
-                additionalSubmitFilesProgress(progressData);
+                addDicomFilesProgress(progressData);
             }
         });
     }
 
     ////////////////////////////
 
-    submitSubmissionPackage(uri: string) {
+    submitSubmissionPackage(uri: string, submissionProgress: (progressData: SubmissionProgressData) => void) {
         var self = this;
         let progressData = new SubmissionProgressData();
+        progressData.processStep = ProcessStep.Submitting;
         $.ajax({
             url: this.submissionFileInfoApiUrl + "/" + uri + "/submit",
             type: "POST",
@@ -289,11 +292,37 @@
             error(jqXhr, textStatus, errorThrown) {
                 progressData.processStatus = ProcessStatus.Error;
                 progressData.message = jqXhr.responseText;
-                //callback(data);
+                submissionProgress(progressData);
             },
             success(result, text, jqXhr) {
                 progressData.processStatus = ProcessStatus.Success;
-                //callback(data);
+                submissionProgress(progressData);
+                self.getSubmissionPackage(uri, submissionProgress);//!!
+            }
+        });
+    }
+
+    //////////////////////////////
+
+    getSubmissionPackage(uri: string, submissionProgress: (progressData: SubmissionProgressData) => void) {
+        var self = this;
+        let progressData = new SubmissionProgressData();
+        progressData.processStep = ProcessStep.Processing;
+        $.ajax({
+            url: this.submissionFileInfoApiUrl + "/" + uri,
+            type: "GET",
+            dataType: "json",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error(jqXhr, textStatus, errorThrown) {
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.message = jqXhr.responseText;
+                submissionProgress(progressData);
+            },
+            success(result, text, jqXhr) {
+                progressData.processStatus = ProcessStatus.Success;
+                submissionProgress(progressData);
             }
         });
     }
@@ -907,6 +936,7 @@ class SubmissionProgressData {
     listOfFilesId: string;
     submissionPackage: SubmissionPackage;
     processStatus: ProcessStatus;
+    processStep: ProcessStep;
     statusCode: number;
     message: string;
     details: string;
@@ -993,4 +1023,10 @@ enum ProcessStatus {
     InProgress,
     Success,
     Error
+}
+
+enum ProcessStep {
+    Uploading,
+    Submitting,
+    Processing
 }
