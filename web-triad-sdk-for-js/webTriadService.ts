@@ -297,35 +297,83 @@
             success(result, text, jqXhr) {
                 progressData.processStatus = ProcessStatus.Success;
                 submissionProgress(progressData);
-                self.getSubmissionPackage(uri, submissionProgress);//!!
+                self.waitForProcessingStudiesByServer(uri, submissionProgress);
             }
         });
+    }
+
+    //////////////////////////////Waiting for processing the studies by the server
+
+    waitForProcessingStudiesByServer(uri: string, submissionProgress: (progressData: SubmissionProgressData) => void) {
+        var self = this;
+        var rejectedAndCorruptedData;
+        
+        getSubmissionPackage(uri, callback);
+
+        function getSubmissionPackage(uri: string, submissionProgress: (progressData: SubmissionProgressData) => void) {
+            let progressData = new SubmissionProgressData();
+            progressData.processStep = ProcessStep.Processing;
+            $.ajax({
+                url: self.submissionFileInfoApiUrl + "/" + uri,
+                type: "GET",
+                dataType: "json",
+                beforeSend(xhr) {
+                    xhr.setRequestHeader("Authorization", self.securityToken);
+                },
+                error(jqXhr, textStatus, errorThrown) {
+                    progressData.processStatus = ProcessStatus.Error;
+                    progressData.message = jqXhr.responseText;
+                    submissionProgress(progressData);
+                },
+                success(result, text, jqXhr) {
+                    progressData.processStatus = ProcessStatus.Success;
+                    progressData.additionalData = result;
+                    submissionProgress(progressData);
+                }
+            });
+        }
+
+        function callback(progressData: SubmissionProgressData) {
+            switch (progressData.processStatus) {
+            case ProcessStatus.Error:
+                    submissionProgress(progressData);
+                    break;
+            case ProcessStatus.Success:
+                    if (studiesAreProcessed(progressData.additionalData)) {
+                        rejectedAndCorruptedData = prepareRejectedAndCorruptedData(progressData.additionalData);
+                        progressData.rejectedAndCorruptedData = rejectedAndCorruptedData;
+                        submissionProgress(progressData);
+                    } else {
+                        setTimeout(getSubmissionPackage(uri, callback), 3000);
+                    }
+                    break;
+            }
+        };
+
+        function studiesAreProcessed(data) {
+            for (let i = 0; i < data.Studies; i++) {
+                if (data.Studies[i].Status === SubmissionTransactionStatus.None ||
+                    data.Studies[i].Status === SubmissionTransactionStatus.InProgress ||
+                    data.Studies[i].Status === SubmissionTransactionStatus.NotStarted) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        function prepareRejectedAndCorruptedData(data) {
+            return {
+                NumberOfCorruptedDicoms: data.DicomSummary.CorruptedCount,
+                NumberOfRejectedNonDicoms: data.NonDicomsSummary.RejectedCount,
+                CorruptedDicoms: data.DicomSummary.Corrupted,
+                RejectedNonDicoms: data.NonDicomsSummary.Rejected
+            };
+        };
     }
 
     //////////////////////////////
 
-    getSubmissionPackage(uri: string, submissionProgress: (progressData: SubmissionProgressData) => void) {
-        var self = this;
-        let progressData = new SubmissionProgressData();
-        progressData.processStep = ProcessStep.Processing;
-        $.ajax({
-            url: this.submissionFileInfoApiUrl + "/" + uri,
-            type: "GET",
-            dataType: "json",
-            beforeSend(xhr) {
-                xhr.setRequestHeader("Authorization", self.securityToken);
-            },
-            error(jqXhr, textStatus, errorThrown) {
-                progressData.processStatus = ProcessStatus.Error;
-                progressData.message = jqXhr.responseText;
-                submissionProgress(progressData);
-            },
-            success(result, text, jqXhr) {
-                progressData.processStatus = ProcessStatus.Success;
-                submissionProgress(progressData);
-            }
-        });
-    }
+
 
     //////////////////////////////
 
@@ -942,6 +990,8 @@ class SubmissionProgressData {
     details: string;
     progress: number;
     progressBytes: number;
+    rejectedAndCorruptedData: any;
+    additionalData: any; 
 }
 
 class FileProgressData {
@@ -1029,4 +1079,20 @@ enum ProcessStep {
     Uploading,
     Submitting,
     Processing
+}
+
+enum SubmissionTransactionStatus {
+    NotStarted,
+    InProgress,
+    InvaliidArgumentForUpload,
+    FolderNotAccessibleDuringUpload,
+    FileSaveErrorDuringUpload,
+    IncompleteAfterLongTimeSinceUpload,
+    DicomParseErrorDuringProcessing,
+    DatabaseErrorDuringProcessing,
+    MsmqInsertErrorDuringProcessing,
+    MsmqRetrieveErrorDuringProcessing,
+    UserCancelledSubmission,
+    None,
+    Success,
 }
