@@ -310,7 +310,7 @@
         
         getSubmissionPackage(uri, callback);
 
-        function getSubmissionPackage(uri: string, submissionProgress: (progressData: SubmissionProgressData) => void) {
+        function getSubmissionPackage(uri: string, getSubmissionPackageProgress: (progressData: SubmissionProgressData) => void) {
             let progressData = new SubmissionProgressData();
             progressData.processStep = ProcessStep.Processing;
             $.ajax({
@@ -323,12 +323,12 @@
                 error(jqXhr, textStatus, errorThrown) {
                     progressData.processStatus = ProcessStatus.Error;
                     progressData.message = jqXhr.responseText;
-                    submissionProgress(progressData);
+                    getSubmissionPackageProgress(progressData);
                 },
                 success(result, text, jqXhr) {
                     progressData.processStatus = ProcessStatus.Success;
                     progressData.additionalData = result;
-                    submissionProgress(progressData);
+                    getSubmissionPackageProgress(progressData);
                 }
             });
         }
@@ -351,10 +351,11 @@
         };
 
         function studiesAreProcessed(data) {
+            if (data.Status !== "Complete") return false;
             for (let i = 0; i < data.Studies; i++) {
-                if (data.Studies[i].Status === SubmissionTransactionStatus.None ||
-                    data.Studies[i].Status === SubmissionTransactionStatus.InProgress ||
-                    data.Studies[i].Status === SubmissionTransactionStatus.NotStarted) {
+                if (data.Studies[i].Status === "None" ||
+                    data.Studies[i].Status === "InProgress" ||
+                    data.Studies[i].Status === "NotStarted") {
                     return false;
                 }
             }
@@ -1030,12 +1031,14 @@ class SubmissionPackage {
     Id: string;
     CreationTime: Date;
     LastUpdateTime: Date;
-    Status: SubmissionPackageStatus;
+    Status: string;
     Metadata: ItemData[];
 }
 
 enum SubmissionPackageStatus {
-    Pending
+    Pending,
+    Submitting,
+    Complete
 }
 
 class ItemData {
