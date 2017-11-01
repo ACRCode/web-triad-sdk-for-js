@@ -131,6 +131,7 @@
             switch (uploadData.processStatus) {
                 case ProcessStatus.Success:
                     if (listOfFiles.isCanceled) {
+                        progressData.processStep = ProcessStep.Canceling;
                         progressData.processStatus = ProcessStatus.Success;                     
                         progressData.message = "CancelSubmit";
                         progressData.progress = 0;
@@ -282,7 +283,7 @@
     submitSubmissionPackage(uri: string, submissionProgress: (progressData: SubmissionProgressData) => void) {
         var self = this;
         let progressData = new SubmissionProgressData();
-        progressData.processStep = ProcessStep.Submitting;
+        progressData.processStep = ProcessStep.Processing;
         $.ajax({
             url: this.submissionFileInfoApiUrl + "/" + uri + "/submit",
             type: "POST",
@@ -295,7 +296,7 @@
                 submissionProgress(progressData);
             },
             success(result, text, jqXhr) {
-                progressData.processStatus = ProcessStatus.Success;
+                progressData.processStatus = ProcessStatus.InProgress;
                 submissionProgress(progressData);
                 self.waitForProcessingStudiesByServer(uri, submissionProgress);
             }
@@ -366,6 +367,7 @@
             return {
                 NumberOfCorruptedDicoms: data.DicomSummary.CorruptedCount,
                 NumberOfRejectedNonDicoms: data.NonDicomsSummary.RejectedCount,
+                NumberOfRejectedDicomDir: data.DicomDirSummary.RejectedCount,
                 CorruptedDicoms: data.DicomSummary.Corrupted,
                 RejectedNonDicoms: data.NonDicomsSummary.Rejected
             };
@@ -744,7 +746,9 @@
 
         self.setFileStatus(file, FileStatus.Uploading);
 
-        var numberOfChunks = Math.ceil(file.size / this.settings.sizeChunk);
+        var numberOfChunks;
+        if (file.size === 0) numberOfChunks = 1;
+        else numberOfChunks = Math.ceil(file.size / this.settings.sizeChunk);
         var start = this.settings.sizeChunk;
         var end = start + this.settings.sizeChunk;
         var numberOfSuccessfulUploadedChunks = 0;
@@ -870,7 +874,8 @@
             }
             progressData.processStatus = ProcessStatus.InProgress;
             progressData.message = "File is uploading";
-            progressData.progress = Math.ceil(numberOfUploadedBytes / file.size * 100);
+            if (file.size === 0) progressData.progress = 100;
+            else progressData.progress = Math.ceil(numberOfUploadedBytes / file.size * 100);
             progressData.progressBytes = numberOfUploadedBytes;
             uploadFileProgress(progressData);
 
@@ -1080,8 +1085,8 @@ enum ProcessStatus {
 
 enum ProcessStep {
     Uploading,
-    Submitting,
-    Processing
+    Processing,
+    Canceling
 }
 
 enum SubmissionTransactionStatus {
