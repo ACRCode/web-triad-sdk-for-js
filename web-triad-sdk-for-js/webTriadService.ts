@@ -18,7 +18,9 @@
             serverApiUrl: "http://cuv-triad-app.restonuat.local/api",
             numberOfFilesInPackage: 4,
             sizeChunk: 1024 * 1024 * 2,
-            numberOfConnection: 6
+            numberOfConnection: 6,
+            dicomsDisabled: false,
+            nonDicomsDisabled: false
         }, serviceSettings);
         const serverApiUrl = this.settings.serverApiUrl;
         this.fileApiUrl = serverApiUrl + this.fileApiUrl;
@@ -35,7 +37,6 @@
 
     submitFiles(files: IFileExt[], metadata: ItemData[], uploadAndSubmitListOfFilesProgress: (progressData: SubmissionProgressData) => void) {
         const id = this.addListOfFilesForUpload(files);
-        this.listsOfFiles[id].isDicom = true;
         const progressData = new SubmissionProgressData();
         progressData.listOfFilesId = id;
         uploadAndSubmitListOfFilesProgress(progressData);
@@ -52,8 +53,7 @@
             files: [],
             size: 0,
             isCanceled: false,
-            submits: [],
-            isDicom: false
+            submits: []
         };
         if (files.length > 0) {
             let sizeOfFiles = 0;
@@ -85,6 +85,8 @@
         progressData.listOfFilesId = listOfFilesId;
 
         const initialSubmissionPackageResource = {
+            DicomsDisabled: self.settings.dicomsDisabled,
+            NonDicomsDisabled: self.settings.nonDicomsDisabled,
             Metadata: metadata
         }
 
@@ -188,7 +190,6 @@
 
             switch (data.processStatus) {
                 case ProcessStatus.Success:
-                    //data.skippedFiles = submitData.skippedFiles;
                     if (finishFileNumberInPackage < listOfFiles.files.length) {
                         progressData.processStatus = ProcessStatus.InProgress;
                         progressData.message = "InProgress";
@@ -946,7 +947,7 @@
         return size;
     }
 
-    ////////////////////////////
+    ////////////////////////////isDicom() is not used
 
     private isDicom(file: IFileExt): JQueryPromise<boolean> {
         var deferred = $.Deferred();
@@ -1017,7 +1018,6 @@ class ListOfFilesForUpload {
     size: number;
     isCanceled: boolean;
     submits: any[];
-    isDicom: boolean;
 }
 
 class PackageOfFilesForUpload {
@@ -1029,6 +1029,8 @@ class PackageOfFilesForUpload {
 }
 
 class InitialSubmissionPackageResource {
+    DicomsDisabled: boolean;
+    NonDicomsDisabled: boolean;
     Metadata: ItemData[];
 }
 
@@ -1056,6 +1058,8 @@ interface IServiceSettings {
     numberOfFilesInPackage?: number;
     sizeChunk?: number;
     numberOfConnection?: number;
+    dicomsDisabled: boolean;
+    nonDicomsDisabled: boolean;
 }
 
 interface IFileExt extends File {
