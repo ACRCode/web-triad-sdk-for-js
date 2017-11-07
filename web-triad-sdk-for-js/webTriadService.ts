@@ -270,7 +270,6 @@
                 addDicomFilesProgress(progressData);
             },
             success(result, textStatus, jqXhr) {
-                //progressData.skippedFiles = result;
                 progressData.statusCode = jqXhr.status;
                 progressData.processStatus = ProcessStatus.Success;
                 progressData.message = "Success additionalSubmit";
@@ -354,10 +353,10 @@
 
         function studiesAreProcessed(data) {
             if (data.Status !== "Complete") return false;
-            for (let i = 0; i < data.Studies; i++) {
-                if (data.Studies[i].Status === "None" ||
-                    data.Studies[i].Status === "InProgress" ||
-                    data.Studies[i].Status === "NotStarted") {
+            for (let i = 0; i < data.Submissions; i++) {
+                if (data.Submissions[i].Status === "None" ||
+                    data.Submissions[i].Status === "InProgress" ||
+                    data.Submissions[i].Status === "NotStarted") {
                     return false;
                 }
             }
@@ -759,18 +758,18 @@
 
         createFileResource(createFileResourceProgress);
 
-        function createFileResource(callback: (jqXhr: JQueryXHR) => void) {
+        function createFileResource(callback: (result: any) => void) {
             var chunk = file.slice(0, self.settings.sizeChunk);
-            const formData = new FormData();
-            formData.append("chunk", chunk, file.name);
             $.ajax({
                 url: self.fileApiUrl,
-                type: "PUT",
-                contentType: false,
+                type: "POST",
+                contentType: "application/octet-stream",
                 processData: false,
-                data: formData,
+                data: chunk,
                 beforeSend(xhr) {
                     xhr.setRequestHeader("Authorization", self.securityToken);
+                    xhr.setRequestHeader("Content-Range", "bytes " + 0 + "-" + (chunk.size - 1) + "/" + file.size);
+                    xhr.setRequestHeader("Content-Disposition", 'attachment; filename=' + encodeURIComponent(file.name));
                 },
                 error(jqXhr) {
                     progressData.processStatus = ProcessStatus.Error;
@@ -781,14 +780,14 @@
                 success(result, textStatus, jqXhr) {
                     progressData.currentUploadedChunkSize = chunk.size;
                     numberOfUploadedBytes += chunk.size;
-                    callback(jqXhr);
+                    callback(result);
                 }
             });
         };
 
-        function createFileResourceProgress(jqXhr: JQueryXHR) {
+        function createFileResourceProgress(data: any) {
             numberOfSuccessfulUploadedChunks++;
-            fileUri = jqXhr.getResponseHeader("Location");
+            fileUri = data.PublicId;
             file.uri = fileUri;
             progressData.fileUri = fileUri;
 
@@ -828,17 +827,16 @@
             }
             pendingRequests++;
             var chunk = file.slice(start, end);
-            const formData = new FormData();
-            formData.append("chunkOffset", start);
-            formData.append("chunk", chunk, file.name);
             $.ajax({
                 url: self.fileApiUrl + "/" + fileUri,
-                data: formData,
-                contentType: false,
+                data: chunk,
+                contentType: "application/octet-stream",
                 processData: false,
-                type: "POST",
+                type: "PUT",
                 beforeSend(xhr) {
                     xhr.setRequestHeader("Authorization", self.securityToken);
+                    xhr.setRequestHeader("Content-Range", "bytes " + start + "-" + (start + chunk.size - 1) + "/" + file.size);
+                    xhr.setRequestHeader("Content-Disposition", 'attachment; filename=' + encodeURIComponent(file.name));
                 },
                 error(jqXhr) {
                     pendingRequests--;
