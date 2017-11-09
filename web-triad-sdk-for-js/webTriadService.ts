@@ -37,9 +37,6 @@
 
     submitFiles(files: IFileExt[], metadata: ItemData[], uploadAndSubmitListOfFilesProgress: (progressData: SubmissionProgressData) => void) {
         const id = this.addListOfFilesForUpload(files);
-        const progressData = new SubmissionProgressData();
-        progressData.listOfFilesId = id;
-        uploadAndSubmitListOfFilesProgress(progressData);
         this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
         return id;
     }
@@ -49,16 +46,16 @@
     addListOfFilesForUpload(files: IFileExt[]): string {
         const listOfFilesId = this.getGuid();
         this.listsOfFiles[listOfFilesId] = {
-            submissionPackage: null,
+            submissionPackageId: null,
+            deferredCreatingSubmissionPackage: $.Deferred(),
             files: [],
             size: 0,
             isCanceled: false,
-            submits: []
+            defferedSubmits: {}
         };
         if (files.length > 0) {
             let sizeOfFiles = 0;
             for (let i = 0; i < files.length; i++) {
-                files[i].number = i;
                 files[i].listOfFilesId = listOfFilesId;
                 this.setFileStatus(files[i], FileStatus.Ready);
                 this.listsOfFiles[listOfFilesId].files.push(files[i]);
@@ -79,10 +76,9 @@
         var finishFileNumberInPackage = 0;
         var numberOfUploadedBytes = 0;
 
-        var submissionPackage = new SubmissionPackage();
         var currentPackage = new PackageOfFilesForUpload();
+        currentPackage.id = self.getGuid();
         var progressData = new SubmissionProgressData();
-        progressData.listOfFilesId = listOfFilesId;
 
         const initialSubmissionPackageResource = {
             DicomsDisabled: self.settings.dicomsDisabled,
@@ -97,8 +93,8 @@
                 uploadAndSubmitListOfFilesProgress(data);
                 return;
             }
-            listOfFiles.submissionPackage = data.submissionPackage;
-            submissionPackage = data.submissionPackage;
+            listOfFiles.submissionPackageId = data.submissionPackage.Id;
+            listOfFiles.deferredCreatingSubmissionPackage.resolve().promise();
             processingNextPackage();
         }
 
@@ -109,7 +105,6 @@
 
             currentPackage.numberOfFiles = currentPackage.files.length;
             currentPackage.numberOfUploadedFiles = 0;
-            currentPackage.packageSize = self.getSizeOfListFiles(currentPackage.files);
             currentPackage.urisOfUploadedFiles = [];
 
             uploadNextFileFromPackage();
@@ -117,7 +112,6 @@
 
         function uploadNextFileFromPackage() {
             if (listOfFiles.isCanceled) return;
-
             const file = currentPackage.files.splice(0, 1)[0];
             self.uploadFile(file, uploadFileProgress);
         }
@@ -134,6 +128,9 @@
                 case ProcessStatus.Success:
                     if (listOfFiles.isCanceled) {
                         progressData.processStep = ProcessStep.Canceling;
+                        progressData.statusCode = uploadData.statusCode;
+                        progressData.details = uploadData.details;
+                        progressData.message = uploadData.message;
                         progressData.processStatus = ProcessStatus.Success;                     
                         progressData.message = "CancelSubmit";
                         progressData.progress = 0;
@@ -142,9 +139,10 @@
                         return;
                     }
                     numberOfUploadedBytes += uploadData.currentUploadedChunkSize;
-
+                    progressData.statusCode = uploadData.statusCode;
                     progressData.processStatus = ProcessStatus.InProgress;
-                    progressData.message = "InProgress";
+                    progressData.details = uploadData.details;
+                    progressData.message = uploadData.message;
                     progressData.progress = Math.ceil(numberOfUploadedBytes / listOfFiles.size * 100);
                     progressData.progressBytes = numberOfUploadedBytes;
 
@@ -154,9 +152,12 @@
 
                         const parameters = currentPackage.urisOfUploadedFiles;
 
-                        listOfFiles.submits.push($.Deferred());
+                        listOfFiles.defferedSubmits[currentPackage.id] = $.Deferred();
 
-                        self.addDicomFilesToExistingSubmissionPackage(submissionPackage.Id, parameters, addDicomFilesProgress);
+                        self.addDicomFilesToExistingSubmissionPackage(listOfFiles.submissionPackageId, parameters, addDicomFilesProgress);
+                        for (let file of listOfFiles.files) {
+                            if (parameters.indexOf(file.uri) > -1) file.isAttached = true;
+                        }
                         return;
                     }
                     uploadAndSubmitListOfFilesProgress(progressData);
@@ -164,9 +165,10 @@
                     break;
                 case ProcessStatus.InProgress:
                     numberOfUploadedBytes += uploadData.currentUploadedChunkSize;
-
+                    progressData.statusCode = uploadData.statusCode;
                     progressData.processStatus = ProcessStatus.InProgress;
-                    progressData.message = "InProgress";
+                    progressData.details = uploadData.details;
+                    progressData.message = uploadData.message;
                     progressData.progress = Math.ceil(numberOfUploadedBytes / listOfFiles.size * 100);
                     progressData.progressBytes = numberOfUploadedBytes;
 
@@ -174,17 +176,17 @@
                     break;
 
                 case ProcessStatus.Error:
+                    progressData.statusCode = uploadData.statusCode;
                     progressData.processStatus = ProcessStatus.Error;
-                    progressData.message = "Error";
+                    progressData.details = uploadData.details;
+                    progressData.message = uploadData.message;
+                    
                     uploadAndSubmitListOfFilesProgress(progressData);
                     break;
-
-                default:
             }
         }
         function addDicomFilesProgress(data: SubmissionProgressData) {
-            const def = listOfFiles.submits.pop().resolve().promise();
-            listOfFiles.submits.push(def);
+            listOfFiles.defferedSubmits[currentPackage.id].resolve().promise();
             progressData.processStep = ProcessStep.Uploading;
             progressData.statusCode = data.statusCode;
 
@@ -201,7 +203,7 @@
                     progressData.message = "Success";
                     uploadAndSubmitListOfFilesProgress(progressData);
 
-                    self.submitSubmissionPackage(submissionPackage.Id, uploadAndSubmitListOfFilesProgress);
+                    self.submitSubmissionPackage(listOfFiles.submissionPackageId, uploadAndSubmitListOfFilesProgress);
                     break;
                 case ProcessStatus.Error:
                     progressData.processStatus = ProcessStatus.Error;
@@ -228,16 +230,16 @@
                 xhr.setRequestHeader("Authorization", self.securityToken);
             },
             error(jqXhr) {
-                progressData.processStatus = ProcessStatus.Error;
-                progressData.message = "Error Submit Create SubmitPackage";
-                progressData.details = jqXhr.responseText;
                 progressData.statusCode = jqXhr.status;
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.message = "Error createSubmissionPackage";
+                progressData.details = jqXhr.responseText;
                 submitFilesProgress(progressData);
             },
             success(result, textStatus, jqXhr) {
                 progressData.statusCode = jqXhr.status;
                 progressData.processStatus = ProcessStatus.Success;
-                progressData.message = "Success Create SubmitPackage";
+                progressData.message = "Success createSubmissionPackage";
                 progressData.submissionPackage = result;
                 submitFilesProgress(progressData);
             }
@@ -250,9 +252,7 @@
         var self = this;
         var progressData = new SubmissionProgressData();
         var filesUris = [];
-        for (let uri of parameters) {
-            filesUris.push({ Id: uri });
-        }
+        for (let uri of parameters) filesUris.push({ Id: uri });
 
         $.ajax({
             url: this.submissionFileInfoApiUrl + "/" + uri + "/files",
@@ -269,7 +269,7 @@
                 progressData.statusCode = jqXhr.status;
                 addDicomFilesProgress(progressData);
             },
-            success(result, textStatus, jqXhr) {
+            success(result, textStatus, jqXhr) {               
                 progressData.statusCode = jqXhr.status;
                 progressData.processStatus = ProcessStatus.Success;
                 progressData.message = "Success additionalSubmit";
@@ -366,9 +366,11 @@
         function prepareRejectedAndCorruptedData(data) {
             return {
                 NumberOfCorruptedDicoms: data.DicomSummary.CorruptedCount,
+                NumberOfRejectedDicoms: data.DicomSummary.RejectedCount,
                 NumberOfRejectedNonDicoms: data.NonDicomsSummary.RejectedCount,
                 NumberOfRejectedDicomDir: data.DicomDirSummary.RejectedCount,
                 CorruptedDicoms: data.DicomSummary.Corrupted,
+                RejectedDicoms: data.DicomSummary.Rejected,
                 RejectedNonDicoms: data.NonDicomsSummary.Rejected
             };
         };
@@ -380,43 +382,53 @@
 
     //////////////////////////////
 
-    cancelUploadAndSubmitListOfFiles(listOfFilesId: string, cancelSubmitProgress: (progressData: SubmissionProgressData) => void) {
+    cancelUploadAndSubmitListOfFiles(listOfFilesId: string,
+        cancelSubmitProgress: (progressData: SubmissionProgressData) => void) {
         const self = this;
         var listOfFiles = self.listsOfFiles[listOfFilesId];
-        var progressData = new SubmissionProgressData();
-        progressData.listOfFilesId = listOfFilesId;
         listOfFiles.isCanceled = true;
+        var progressData = new SubmissionProgressData();
+        progressData.processStep = ProcessStep.Canceling;
 
-        $.when.apply($, listOfFiles.submits).done(() => {
-            for (let i = 0; i < listOfFiles.files.length; i++) {
-                if (listOfFiles.files[i].status === FileStatus.Uploaded) {
-                    listOfFiles.files[i].status = FileStatus.Canceling;
-                    listOfFiles.files[i].cancelUploadFileProgress = cancelSubmitProgress;
-                    this.deleteFileFromStage(listOfFiles.files[i]);
+
+        $.when(listOfFiles.deferredCreatingSubmissionPackage).done(() => {
+
+            var defs = [];
+            for (let def in listOfFiles.defferedSubmits) {
+                if (listOfFiles.defferedSubmits.hasOwnProperty(def)) {
+                    defs.push(listOfFiles.defferedSubmits[def]);
                 }
             }
-            //check!!
-            //$.when(listOfFiles.receiptTransactionUid).done(() => {
-            $.ajax({
-                url: this.submissionFileInfoApiUrl + "/" + listOfFiles.submissionPackage.Id,//!!
-                type: "DELETE",
-                beforeSend(xhr) {
-                    xhr.setRequestHeader("Authorization", self.securityToken);
-                },
-                error(jqXhr, textStatus, errorThrown) {
-                    progressData.processStatus = ProcessStatus.Error;
-                    progressData.message = "Error cancelSubmit";
-                    progressData.details = jqXhr.responseText;
-                    progressData.statusCode = jqXhr.status;
-                    cancelSubmitProgress(progressData);
-                },
-                success(result, textStatus, jqXhr) {
-                    progressData.statusCode = jqXhr.status;
-                    progressData.processStatus = ProcessStatus.Success;
-                    progressData.message = "Success cancelSubmit";
-                    cancelSubmitProgress(progressData);
+
+            $.when.apply($, defs).done(() => {
+                $.ajax({
+                    url: this.submissionFileInfoApiUrl + "/" + listOfFiles.submissionPackageId,
+                    type: "DELETE",
+                    beforeSend(xhr) {
+                        xhr.setRequestHeader("Authorization", self.securityToken);
+                    },
+                    error(jqXhr, textStatus, errorThrown) {
+                        progressData.processStatus = ProcessStatus.Error;
+                        progressData.statusCode = jqXhr.status;
+                        progressData.message = "Error cancelUploadAndSubmitListOfFiles";
+                        progressData.details = jqXhr.responseText;
+                        cancelSubmitProgress(progressData);
+                    },
+                    success(result, textStatus, jqXhr) {
+                        progressData.processStatus = ProcessStatus.Success;
+                        progressData.statusCode = jqXhr.status;
+                        progressData.message = "Success cancelUploadAndSubmitListOfFiles";
+                        progressData.details = jqXhr.responseText;
+                        cancelSubmitProgress(progressData);
+                    }
+                });
+                for (let i = 0; i < listOfFiles.files.length; i++) {
+                    if (!listOfFiles.files[i].isAttached && listOfFiles.files[i].status !== FileStatus.Ready) {
+                        listOfFiles.files[i].status = FileStatus.Canceling;
+                        listOfFiles.files[i].cancelUploadFileProgress = cancelSubmitProgress;
+                        this.deleteFileFromStage(listOfFiles.files[i]);
+                    }
                 }
-                //});
             });
         });
     }
@@ -712,29 +724,36 @@
         var self = this;
         var callback = file.cancelUploadFileProgress;
         var data: any = {};
-        data.listOfFilesId = file.listOfFilesId;
-
-        $.ajax({
-            url: this.fileApiUrl + "/" + file.uri,
-            type: "DELETE",
-            beforeSend(xhr) {
-                xhr.setRequestHeader("Authorization", self.securityToken);
-            },
-            error(jqXhr, textStatus, errorThrown) {
-                data.status = ProcessStatus.Error;
-                data.message = "ERROR CANCEL UPLOAD FILE";
-                data.details = jqXhr.responseText;
-                data.statusCode = jqXhr.status;
-                callback(data);
-            },
-            success(result, textStatus, jqXhr) {
-                data.statusCode = jqXhr.status;
-                data.status = ProcessStatus.Success;
-                data.progress = 0;
-                data.progressBytes = 0;
-                data.message = "CANCEL UPLOAD FILE";
-                callback(data);
+        var defs = [];
+        for (let def in file.defferedUploadChunks) {
+            if (file.defferedUploadChunks.hasOwnProperty(def)) {
+                defs.push(file.defferedUploadChunks[def]);
             }
+        }
+        $.when.apply($, defs).done(() => {
+            $.ajax({
+                url: this.fileApiUrl + "/" + file.uri,
+                type: "DELETE",
+                beforeSend(xhr) {
+                    xhr.setRequestHeader("Authorization", self.securityToken);
+                },
+                error(jqXhr, textStatus, errorThrown) {
+                    data.status = ProcessStatus.Error;
+                    data.message = "ERROR CANCEL UPLOAD FILE";
+                    data.details = jqXhr.responseText;
+                    data.statusCode = jqXhr.status;
+                    callback(data);
+                },
+                success(result, textStatus, jqXhr) {
+                    data.statusCode = jqXhr.status;
+                    data.status = ProcessStatus.Success;
+                    data.progress = 0;
+                    data.progressBytes = 0;
+                    data.message = "CANCEL UPLOAD FILE";
+                    callback(data);
+                }
+            });
+
         });
     }
 
@@ -743,7 +762,7 @@
     private uploadFile(file: IFileExt, uploadFileProgress: (progressData: FileProgressData) => void) {
         var self = this;
         var progressData = new FileProgressData();
-
+        file.defferedUploadChunks = {};
         self.setFileStatus(file, FileStatus.Uploading);
 
         var numberOfChunks;
@@ -752,14 +771,14 @@
         var start = this.settings.sizeChunk;
         var end = start + this.settings.sizeChunk;
         var numberOfSuccessfulUploadedChunks = 0;
-        var numberOfUploadedBytes = 0;
-        var pendingRequests = 0;
-        var fileUri: string;
 
         createFileResource(createFileResourceProgress);
 
-        function createFileResource(callback: (result: any) => void) {
+        function createFileResource(callback: (data: FileProgressData) => void) {
             var chunk = file.slice(0, self.settings.sizeChunk);
+            file.defferedUploadChunks[1] = $.Deferred();
+            var fileProgressData = new FileProgressData();
+
             $.ajax({
                 url: self.fileApiUrl,
                 type: "POST",
@@ -769,52 +788,53 @@
                 beforeSend(xhr) {
                     xhr.setRequestHeader("Authorization", self.securityToken);
                     xhr.setRequestHeader("Content-Range", "bytes " + 0 + "-" + (chunk.size - 1) + "/" + file.size);
-                    xhr.setRequestHeader("Content-Disposition", 'attachment; filename=' + encodeURIComponent(file.name));
+                    xhr.setRequestHeader("Content-Disposition", 'attachment; filename="' + file.name + '"');
                 },
                 error(jqXhr) {
-                    progressData.processStatus = ProcessStatus.Error;
-                    progressData.message = "File is not uploaded";
-                    progressData.details = jqXhr.responseText;
-                    uploadFileProgress(progressData);
+                    file.defferedUploadChunks[1].resolve().promise();
+                    fileProgressData.statusCode = jqXhr.status;
+                    fileProgressData.processStatus = ProcessStatus.Error;
+                    fileProgressData.message = "File is not uploaded";
+                    fileProgressData.details = jqXhr.responseText;
+                    uploadFileProgress(fileProgressData);
                 },
                 success(result, textStatus, jqXhr) {
-                    progressData.currentUploadedChunkSize = chunk.size;
-                    numberOfUploadedBytes += chunk.size;
-                    callback(result);
+                    file.defferedUploadChunks[1].resolve().promise();
+                    fileProgressData.statusCode = jqXhr.status;
+                    fileProgressData.processStatus = ProcessStatus.Success;
+                    fileProgressData.message = "File is created";
+                    fileProgressData.details = jqXhr.responseText;
+                    fileProgressData.currentUploadedChunkSize = chunk.size;
+                    fileProgressData.fileUri = result.PublicId;
+                    callback(fileProgressData);
                 }
             });
         };
 
-        function createFileResourceProgress(data: any) {
+        function createFileResourceProgress(data: FileProgressData) {
+            if (self.listsOfFiles[file.listOfFilesId].isCanceled) return;
             numberOfSuccessfulUploadedChunks++;
-            fileUri = data.PublicId;
-            file.uri = fileUri;
-            progressData.fileUri = fileUri;
+            file.uri = data.fileUri;
+            progressData.fileUri = file.uri;
+            progressData.statusCode = data.statusCode;
+            progressData.details = data.details;
+            progressData.currentUploadedChunkSize = data.currentUploadedChunkSize;
 
             if (numberOfChunks === 1) {
                 self.setFileStatus(file, FileStatus.Uploaded);
-
-                if (self.listsOfFiles[file.listOfFilesId].isCanceled) {
-                    file.cancelUploadFileProgress = uploadFileProgress;
-                    self.deleteFileFromStage(file);
-                }
-
                 progressData.processStatus = ProcessStatus.Success;
                 progressData.message = "File is uploaded";
-                progressData.progress = 100;
-                progressData.progressBytes = numberOfUploadedBytes;
                 uploadFileProgress(progressData);
                 return;
             }
             self.setFileStatus(file, FileStatus.Uploading);
             progressData.processStatus = ProcessStatus.InProgress;
             progressData.message = "File is uploading";
-            progressData.progress = Math.ceil(numberOfUploadedBytes / file.size * 100);
-            progressData.progressBytes = numberOfUploadedBytes;
             uploadFileProgress(progressData);
 
             for (let i = 2; i <= self.settings.numberOfConnection + 1; i++) {
                 if (start >= file.size) return;
+                file.defferedUploadChunks[i] = $.Deferred();
                 sendChunk(start, end, i);
                 start = i * self.settings.sizeChunk;
                 end = start + self.settings.sizeChunk;
@@ -822,13 +842,10 @@
         };
 
         function sendChunk(start: number, end: number, chunkNumber: number) {
-            if (!addRequest()) {
-                return;
-            }
-            pendingRequests++;
+            if (self.listsOfFiles[file.listOfFilesId].isCanceled) return;
             var chunk = file.slice(start, end);
             $.ajax({
-                url: self.fileApiUrl + "/" + fileUri,
+                url: self.fileApiUrl + "/" + file.uri,
                 data: chunk,
                 contentType: "application/octet-stream",
                 processData: false,
@@ -836,10 +853,10 @@
                 beforeSend(xhr) {
                     xhr.setRequestHeader("Authorization", self.securityToken);
                     xhr.setRequestHeader("Content-Range", "bytes " + start + "-" + (start + chunk.size - 1) + "/" + file.size);
-                    xhr.setRequestHeader("Content-Disposition", 'attachment; filename=' + encodeURIComponent(file.name));
+                    xhr.setRequestHeader("Content-Disposition", 'attachment; filename="' + file.name + '"');
                 },
                 error(jqXhr) {
-                    pendingRequests--;
+                    file.defferedUploadChunks[chunkNumber].resolve().promise();
                     self.setFileStatus(file, FileStatus.UploadError);
                     progressData.processStatus = ProcessStatus.Error;
                     progressData.message = "File is not uploaded";
@@ -847,35 +864,25 @@
                     uploadFileProgress(progressData);
                 },
                 success(result, textStatus, jqXhr) {
-                    pendingRequests--;
+                    file.defferedUploadChunks[chunkNumber].resolve().promise();
                     progressData.currentUploadedChunkSize = chunk.size;
-                    numberOfUploadedBytes += chunk.size;
                     uploadHandler(jqXhr, chunkNumber);
                 }
             });
         };
 
         function uploadHandler(jqXhr: JQueryXHR, chunkNumber: number) {
-
+            if (self.listsOfFiles[file.listOfFilesId].isCanceled) return;
             numberOfSuccessfulUploadedChunks++;
             if (numberOfSuccessfulUploadedChunks === numberOfChunks) {
                 self.setFileStatus(file, FileStatus.Uploaded);
-                if (self.listsOfFiles[file.listOfFilesId].isCanceled) {
-                    file.cancelUploadFileProgress = uploadFileProgress;
-                    self.deleteFileFromStage(file);
-                }
                 progressData.message = "File is uploaded";
                 progressData.processStatus = ProcessStatus.Success;
-                progressData.progress = 100;
-                progressData.progressBytes = numberOfUploadedBytes;
                 uploadFileProgress(progressData);
                 return;
             }
             progressData.processStatus = ProcessStatus.InProgress;
             progressData.message = "File is uploading";
-            if (file.size === 0) progressData.progress = 100;
-            else progressData.progress = Math.ceil(numberOfUploadedBytes / file.size * 100);
-            progressData.progressBytes = numberOfUploadedBytes;
             uploadFileProgress(progressData);
 
             chunkNumber += self.settings.numberOfConnection;
@@ -884,17 +891,8 @@
 
             start = (chunkNumber - 1) * self.settings.sizeChunk;
             end = start + self.settings.sizeChunk;
+            file.defferedUploadChunks[chunkNumber] = $.Deferred();
             sendChunk(start, end, chunkNumber);
-        }
-
-        function addRequest() {
-            if (!self.listsOfFiles[file.listOfFilesId].isCanceled) return true;
-            if (pendingRequests === 0) {
-                file.cancelUploadFileProgress = uploadFileProgress;
-                console.log("addRequest delete");
-                self.deleteFileFromStage(file);
-            }
-            return false;
         }
     }
 
@@ -917,6 +915,7 @@
 
         switch (status) {
             case FileStatus.Ready:
+                file.isAttached = false;
                 break;
             case FileStatus.Uploading:
                 break;
@@ -933,16 +932,6 @@
             default:
                 break;
         }
-    }
-
-    ////////////////////////////
-
-    private getSizeOfListFiles(list: IFileExt[]) {
-        let size = 0;
-        for (let i = 0; i < list.length; i++) {
-            size += list[i].size;
-        }
-        return size;
     }
 
     ////////////////////////////isDicom() is not used
@@ -986,7 +975,6 @@
 ////////////////////////////////////////////////////////////////////////////////////
 
 class SubmissionProgressData {
-    listOfFilesId: string;
     submissionPackage: SubmissionPackage;
     processStatus: ProcessStatus;
     processStep: ProcessStep;
@@ -1006,19 +994,19 @@ class FileProgressData {
     statusCode: number;
     message: string;
     details: string;
-    progress: number;
-    progressBytes: number;
 }
 
 class ListOfFilesForUpload {
-    submissionPackage: SubmissionPackage;
+    submissionPackageId: string;
+    deferredCreatingSubmissionPackage: any;
     files: IFileExt[];
     size: number;
     isCanceled: boolean;
-    submits: any[];
+    defferedSubmits: { [id: string]: any };
 }
 
 class PackageOfFilesForUpload {
+    id: string;
     files: IFileExt[];
     numberOfUploadedFiles: number;
     numberOfFiles: number;
@@ -1061,11 +1049,12 @@ interface IServiceSettings {
 }
 
 interface IFileExt extends File {
-    number: number;
     id: string;
     listOfFilesId: string;
     uri: string;
     status: FileStatus;
+    isAttached: boolean;
+    defferedUploadChunks: { [number: string]: any };
     cancelUploadFileProgress: (data: any) => void;
 }
 
