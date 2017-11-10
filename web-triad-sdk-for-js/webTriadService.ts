@@ -811,15 +811,14 @@
             });
         };
 
-        function createFileResourceProgress(data: FileProgressData) {
-            if (self.listsOfFiles[file.listOfFilesId].isCanceled) return;
+        function createFileResourceProgress(data: FileProgressData) {            
             numberOfSuccessfulUploadedChunks++;
             file.uri = data.fileUri;
             progressData.fileUri = file.uri;
             progressData.statusCode = data.statusCode;
             progressData.details = data.details;
             progressData.currentUploadedChunkSize = data.currentUploadedChunkSize;
-
+            if (self.listsOfFiles[file.listOfFilesId].isCanceled) return;
             if (numberOfChunks === 1) {
                 self.setFileStatus(file, FileStatus.Uploaded);
                 progressData.processStatus = ProcessStatus.Success;
