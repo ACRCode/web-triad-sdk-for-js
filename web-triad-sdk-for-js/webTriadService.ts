@@ -2,7 +2,7 @@
     private self = this;
     private fileApiUrl = "/files";
     private dicomViewerUrl = "/dicomViewerUrl";
-    private anonymizationProfileUrl = "/anonymizationProfile";
+    private nonDicomsUrl = "/nonDicoms";
     private submissionFileInfoApiUrl = "/submissionPackages";
     private submittedSeriesDetailsUrl = "/series";
     private submittedStudiesDetailsUrl = "/studies";
@@ -29,7 +29,7 @@
         this.submittedSeriesDetailsUrl = serverApiUrl + this.submittedSeriesDetailsUrl;
         this.submittedFilesDetailsUrl = serverApiUrl + this.submittedFilesDetailsUrl;
         this.dicomViewerUrl = serverApiUrl + this.dicomViewerUrl;
-        this.anonymizationProfileUrl = serverApiUrl + this.anonymizationProfileUrl;
+        this.nonDicomsUrl = serverApiUrl + this.nonDicomsUrl;
         this.listsOfFiles = {};
     }
 
@@ -482,39 +482,13 @@
         });
     }
 
-    ////////////////////////////
-
-    getSeriesDetails(parameters: any, callback: (data: any) => void) {
-        var self = this;
-        parameters = this.arrayOfNameValueToDictionary(parameters);
-
-        $.ajax({
-            url: this.submittedSeriesDetailsUrl + "?" + $.param(parameters),
-            type: "GET",
-            dataType: "json",
-            beforeSend(xhr) {
-                xhr.setRequestHeader("Authorization", self.securityToken);
-            },
-            error(jqXhr, textStatus, errorThrown) {
-                let data: any = {};
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
-            },
-            success(data, textStatus, jqXhr) {
-                data.status = ProcessStatus.Success;
-                callback(data);
-            }
-        });
-    }
-
     ///////////////////////////
 
-    deleteSeries(seriesId: string, callback: (data: any) => void) {
+    deleteSeries(studyId, seriesId: string, callback: (data: any) => void) {
         var self = this;
         let data: any = {};
         $.ajax({
-            url: this.submittedSeriesDetailsUrl + "/" + seriesId,
+            url: this.submittedStudiesDetailsUrl + "/" + studyId + "/series/" + seriesId,
             type: "DELETE",
             beforeSend(xhr) {
                 xhr.setRequestHeader("Authorization", self.securityToken);
@@ -537,65 +511,16 @@
         this.securityToken = token;
     }
 
-    ////////////////////////////addNonDicomFilesToExistingSubmissionPackage() is not used
+    /////////////////////////////////////////
 
-    addNonDicomFilesToExistingSubmissionPackage(parameters: any, submitFilesProgress: (data: any) => void) {
+    getNonDicomsDetails(parameters: any, callback: (data: any) => void) {
         var self = this;
-        let isContainsTransactionUid = false;
-        for (let i = 0; i < parameters.Metadata.length; i++) {
-            if (parameters.Metadata[i].Name === "TransactionUID") {
-                isContainsTransactionUid = true;
-                break;
-            }
-        }
-        if (!isContainsTransactionUid) {
-            parameters.Metadata.push(
-                {
-                    Name: "TransactionUID",
-                    Value: this.getGuid()
-                });
-        }
-
-        var data: any = {};
+        parameters = this.arrayOfNameValueToDictionary(parameters);
 
         $.ajax({
-            url: this.submissionFileInfoApiUrl,
-            type: "POST",
-            contentType: "application/json; charset=utf-8",
-            data: JSON.stringify(parameters),
-            beforeSend(xhr) {
-                xhr.setRequestHeader("Authorization", self.securityToken);
-            },
-            error(jqXhr) {
-                data.status = ProcessStatus.Error;
-                data.message = "Error attachFiles";
-                data.details = jqXhr.responseText;
-                data.statusCode = jqXhr.status;
-                submitFilesProgress(data);
-            },
-            success(result, textStatus, jqXhr) {
-                data.statusCode = jqXhr.status;
-                data.status = ProcessStatus.Success;
-                data.message = "Success attachFiles";
-                submitFilesProgress(data);
-            }
-        });
-    }
-
-    ////////////////////////////getFileListByStudyId() is not used
-
-    getFileListByStudyId(studyId: number, callback: (data: any) => void) {
-        var self = this;
-
-        const parameters = {};
-        if (studyId !== undefined) {
-            parameters["DicomDataStudyID"] = studyId;
-        }
-        parameters["ParentLevel"] = "Study";
-        $.ajax({
-            url: this.submittedFilesDetailsUrl + "?" + $.param(parameters),
+            url: this.nonDicomsUrl + "?" + $.param(parameters),
             type: "GET",
-            dataType: 'json',
+            dataType: "json",
             beforeSend(xhr) {
                 xhr.setRequestHeader("Authorization", self.securityToken);
             },
@@ -684,35 +609,6 @@
             },
             success(result, text, jqXhr) {
                 data.status = ProcessStatus.Success;
-                callback(data);
-            }
-        });
-    }
-
-    ////////////////////////////getAnonymizationProfile() is not used
-
-    getAnonymizationProfile(parameters: any, callback: (data: any) => void) {
-        var self = this;
-        parameters = this.arrayOfNameValueToDictionary(parameters);
-
-        $.ajax({
-            url: this.anonymizationProfileUrl + "?" + $.param(parameters),
-            type: "GET",
-            dataType: 'json',
-            beforeSend(xhr) {
-                xhr.setRequestHeader("Authorization", self.securityToken);
-            },
-            error(jqXhr, textStatus, errorThrown) {
-                let data: any = {};
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
-            },
-            success(result, textStatus, jqXhr) {
-                let data: any = {
-                    message: result,
-                    status: ProcessStatus.Success
-                };
                 callback(data);
             }
         });
