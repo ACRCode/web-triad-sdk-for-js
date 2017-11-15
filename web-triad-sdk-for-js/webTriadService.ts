@@ -461,11 +461,17 @@
 
     ////////////////////////////
 
-    deleteStudy(studyId: string, callback: (data: any) => void) {
+    deleteStudy(deleteUrl: string, callback: (data: any) => void) {
         var self = this;
+
+        var url = self.settings.serverApiUrl;
+        if (deleteUrl.indexOf("/api/") > -1) {
+            url = self.settings.serverApiUrl.replace("/api", "");
+        }
+
         let data: any = {};
         $.ajax({
-            url: this.submittedStudiesDetailsUrl + "/" + studyId,
+            url: url + deleteUrl,
             type: "DELETE",
             beforeSend(xhr) {
                 xhr.setRequestHeader("Authorization", self.securityToken);
@@ -484,11 +490,17 @@
 
     ///////////////////////////
 
-    deleteSeries(studyId, seriesId: string, callback: (data: any) => void) {
+    deleteSeries(deleteUrl: string, callback: (data: any) => void) {
         var self = this;
+
+        var url = self.settings.serverApiUrl;
+        if (deleteUrl.indexOf("/api/") > -1) {
+            url = self.settings.serverApiUrl.replace("/api", "");
+        }
+
         let data: any = {};
         $.ajax({
-            url: this.submittedStudiesDetailsUrl + "/" + studyId + "/series/" + seriesId,
+            url: url + deleteUrl,
             type: "DELETE",
             beforeSend(xhr) {
                 xhr.setRequestHeader("Authorization", self.securityToken);
@@ -506,6 +518,45 @@
     }
 
     ////////////////////////////
+
+    deleteNonDicom(deleteUrl: string, callback: (data: any) => void) {
+        var self = this;
+
+        var url = self.settings.serverApiUrl;
+        if (deleteUrl.indexOf("/api/") > -1) {
+            url = self.settings.serverApiUrl.replace("/api", "");
+        }
+
+        let data: any = {};
+        $.ajax({
+            url: url + deleteUrl,
+            type: "DELETE",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error(jqXhr, textStatus, errorThrown) {
+                data.status = ProcessStatus.Error;
+                data.message = jqXhr.responseText;
+                callback(data);
+            },
+            success(result, textStatus, jqXhr) {
+                data.status = ProcessStatus.Success;
+                callback(data);
+            }
+        });
+    }
+
+    ////////////////////////////
+
+    deleteNonDicoms(deleteUrls: string[], callback: (data: any) => void) {
+        var self = this;
+
+        for (let url of deleteUrls) {
+            self.deleteNonDicom(url, callback); 
+        }
+    }
+
+    ///////////////////////////
 
     setSecurityToken(token: string) {
         this.securityToken = token;
