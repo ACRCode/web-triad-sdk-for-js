@@ -546,14 +546,30 @@
         });
     }
 
-    ////////////////////////////
+    ///////////////////////////
 
-    deleteNonDicoms(deleteUrls: string[], callback: (data: any) => void) {
+    deleteNonDicoms(ids: string[], callback: (data: any) => void) {
         var self = this;
 
-        for (let url of deleteUrls) {
-            self.deleteNonDicom(url, callback); 
-        }
+        let idsStr = ids.join();
+
+        let data: any = {};
+        $.ajax({
+            url: self.nonDicomsUrl + "?ids=" + idsStr,
+            type: "DELETE",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error(jqXhr, textStatus, errorThrown) {
+                data.status = ProcessStatus.Error;
+                data.message = jqXhr.responseText;
+                callback(data);
+            },
+            success(result, textStatus, jqXhr) {
+                data.status = ProcessStatus.Success;
+                callback(data);
+            }
+        });
     }
 
     ///////////////////////////
