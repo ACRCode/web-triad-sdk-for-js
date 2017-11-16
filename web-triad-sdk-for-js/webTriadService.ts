@@ -340,27 +340,35 @@
                     submissionProgress(progressData);
                     break;
             case ProcessStatus.Success:
-                    if (studiesAreProcessed(progressData.additionalData)) {
-                        rejectedAndCorruptedData = prepareRejectedAndCorruptedData(progressData.additionalData);
-                        progressData.rejectedAndCorruptedData = rejectedAndCorruptedData;
-                        submissionProgress(progressData);
-                    } else {
-                        setTimeout(getSubmissionPackage(uri, callback), 3000);
-                    }
+                    switch (submissionsAreProcessed(progressData.additionalData)) {
+                        case SubmissionPackageStatus.Failed:
+                            progressData.processStatus = ProcessStatus.Error;
+                            progressData.message = "Processing submission package failed";
+                            break;
+                        case SubmissionPackageStatus.Submitting:
+                            setTimeout(() => { getSubmissionPackage(uri, callback) }, 3000);
+                            break;
+                        case SubmissionPackageStatus.Complete:
+                            rejectedAndCorruptedData = prepareRejectedAndCorruptedData(progressData.additionalData);
+                            progressData.rejectedAndCorruptedData = rejectedAndCorruptedData;
+                            submissionProgress(progressData);
+                            break;
+                }
                     break;
             }
         };
 
-        function studiesAreProcessed(data) {
-            if (data.Status !== "Complete") return false;
+        function submissionsAreProcessed(data) {
+            if (data.Status === "Failed") return SubmissionPackageStatus.Failed;
+            if (data.Status !== "Complete") return SubmissionPackageStatus.Submitting;
             for (let i = 0; i < data.Submissions; i++) {
                 if (data.Submissions[i].Status === "None" ||
                     data.Submissions[i].Status === "InProgress" ||
                     data.Submissions[i].Status === "NotStarted") {
-                    return false;
+                    return SubmissionPackageStatus.Submitting;
                 }
             }
-            return true;
+            return SubmissionPackageStatus.Complete;
         };
 
         function prepareRejectedAndCorruptedData(data) {
@@ -551,25 +559,40 @@
     deleteNonDicoms(ids: string[], callback: (data: any) => void) {
         var self = this;
 
-        let idsStr = ids.join();
+        let arr = splitArray(ids, 300);
 
-        let data: any = {};
-        $.ajax({
-            url: self.nonDicomsUrl + "?ids=" + idsStr,
-            type: "DELETE",
-            beforeSend(xhr) {
-                xhr.setRequestHeader("Authorization", self.securityToken);
-            },
-            error(jqXhr, textStatus, errorThrown) {
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
-            },
-            success(result, textStatus, jqXhr) {
-                data.status = ProcessStatus.Success;
-                callback(data);
-            }
-        });
+        for (let batch of arr) {
+            let idsStr = batch.join();
+            let data: any = {};
+            $.ajax({
+                url: self.nonDicomsUrl + "?ids=" + idsStr,
+                type: "DELETE",
+                beforeSend(xhr) {
+                    xhr.setRequestHeader("Authorization", self.securityToken);
+                },
+                error(jqXhr, textStatus, errorThrown) {
+                    data.status = ProcessStatus.Error;
+                    data.message = jqXhr.responseText;
+                    callback(data);
+                },
+                success(result, textStatus, jqXhr) {
+                    data.status = ProcessStatus.Success;
+                    callback(data);
+                }
+            });
+        };
+
+        function splitArray(arr: any[], size: number) {
+            let obj = [];
+            let start = 0;
+            let end = size;
+            do {
+                obj.push(arr.slice(start, end));
+                start = end;
+                end += size;
+            } while (start < arr.length)
+            return obj;
+        };
     }
 
     ///////////////////////////
@@ -652,29 +675,6 @@
             success(result, text, jqXhr) {
                 const uri = jqXhr.getResponseHeader("Location");
                 window.location.href = self.submittedFilesDetailsUrl + "/" + uri;
-                data.status = ProcessStatus.Success;
-                callback(data);
-            }
-        });
-    }
-
-    /////////////////////////////deleteFile() is not used
-
-    deleteFile(id: number, callback: (data: any) => void) {
-        var self = this;
-        let data: any = {};
-        $.ajax({
-            url: this.submittedFilesDetailsUrl + "/" + id,
-            type: "DELETE",
-            beforeSend(xhr) {
-                xhr.setRequestHeader("Authorization", self.securityToken);
-            },
-            error(jqXhr, textStatus, errorThrown) {
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
-            },
-            success(result, text, jqXhr) {
                 data.status = ProcessStatus.Success;
                 callback(data);
             }
@@ -991,9 +991,9 @@ class SubmissionPackage {
 }
 
 enum SubmissionPackageStatus {
-    Pending,
     Submitting,
-    Complete
+    Complete,
+    Failed
 }
 
 class ItemData {
