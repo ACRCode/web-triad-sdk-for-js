@@ -177,6 +177,7 @@
 
                 case ProcessStatus.Error:
                     progressData.statusCode = uploadData.statusCode;
+                    progressData.statusText = uploadData.statusText;
                     progressData.processStatus = ProcessStatus.Error;
                     progressData.details = uploadData.details;
                     progressData.message = uploadData.message;
@@ -220,7 +221,7 @@
     createSubmissionPackage(parameters: InitialSubmissionPackageResource, submitFilesProgress: (progressData: SubmissionProgressData) => void) {
         var self = this;
         var progressData = new SubmissionProgressData();
-
+        progressData.processStep = ProcessStep.Uploading;
         $.ajax({
             url: this.submissionFileInfoApiUrl,
             type: "POST",
@@ -231,6 +232,7 @@
             },
             error(jqXhr) {
                 progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
                 progressData.processStatus = ProcessStatus.Error;
                 progressData.message = "Error createSubmissionPackage";
                 progressData.details = jqXhr.responseText;
@@ -251,6 +253,7 @@
     addDicomFilesToExistingSubmissionPackage(uri: string, parameters: string[], addDicomFilesProgress: (progressData: SubmissionProgressData) => void) {
         var self = this;
         var progressData = new SubmissionProgressData();
+        progressData.processStep = ProcessStep.Uploading;
         var filesUris = [];
         for (let uri of parameters) filesUris.push({ Id: uri });
 
@@ -267,6 +270,7 @@
                 progressData.message = "Error additionalSubmit";
                 progressData.details = jqXhr.responseText;
                 progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
                 addDicomFilesProgress(progressData);
             },
             success(result, textStatus, jqXhr) {               
@@ -292,11 +296,15 @@
             },
             error(jqXhr, textStatus, errorThrown) {
                 progressData.processStatus = ProcessStatus.Error;
-                progressData.message = jqXhr.responseText;
+                progressData.message = "Error submitSubmissionPackage";
+                progressData.details = jqXhr.responseText;
+                progressData.statusText = jqXhr.statusText;
+                progressData.statusCode = jqXhr.status;
                 submissionProgress(progressData);
             },
             success(result, text, jqXhr) {
                 progressData.processStatus = ProcessStatus.InProgress;
+                progressData.statusCode = jqXhr.status;
                 submissionProgress(progressData);
                 self.waitForProcessingStudiesByServer(uri, submissionProgress);
             }
@@ -323,11 +331,15 @@
                 },
                 error(jqXhr, textStatus, errorThrown) {
                     progressData.processStatus = ProcessStatus.Error;
-                    progressData.message = jqXhr.responseText;
+                    progressData.statusCode = jqXhr.status;
+                    progressData.statusText = jqXhr.statusText;
+                    progressData.message = "Error getSubmissionPackage";
+                    progressData.details = jqXhr.responseText;
                     getSubmissionPackageProgress(progressData);
                 },
                 success(result, text, jqXhr) {
                     progressData.processStatus = ProcessStatus.Success;
+                    progressData.statusCode = jqXhr.status;
                     progressData.additionalData = result;
                     getSubmissionPackageProgress(progressData);
                 }
@@ -340,7 +352,7 @@
                     submissionProgress(progressData);
                     break;
             case ProcessStatus.Success:
-                    switch (submissionsAreProcessed(progressData.additionalData)) {
+                    switch (getSubmissionStatus(progressData.additionalData)) {
                         case SubmissionPackageStatus.Failed:
                             progressData.processStatus = ProcessStatus.Error;
                             progressData.message = "Processing submission package failed";
@@ -358,10 +370,10 @@
             }
         };
 
-        function submissionsAreProcessed(data) {
+        function getSubmissionStatus(data) {
             if (data.Status === "Failed") return SubmissionPackageStatus.Failed;
             if (data.Status !== "Complete") return SubmissionPackageStatus.Submitting;
-            for (let i = 0; i < data.Submissions; i++) {
+            for (let i = 0; i < data.Submissions.length; i++) {
                 if (data.Submissions[i].Status === "None" ||
                     data.Submissions[i].Status === "InProgress" ||
                     data.Submissions[i].Status === "NotStarted") {
@@ -418,6 +430,7 @@
                     error(jqXhr, textStatus, errorThrown) {
                         progressData.processStatus = ProcessStatus.Error;
                         progressData.statusCode = jqXhr.status;
+                        progressData.statusText = jqXhr.statusText;
                         progressData.message = "Error cancelUploadAndSubmitListOfFiles";
                         progressData.details = jqXhr.responseText;
                         cancelSubmitProgress(progressData);
@@ -426,7 +439,6 @@
                         progressData.processStatus = ProcessStatus.Success;
                         progressData.statusCode = jqXhr.status;
                         progressData.message = "Success cancelUploadAndSubmitListOfFiles";
-                        progressData.details = jqXhr.responseText;
                         cancelSubmitProgress(progressData);
                     }
                 });
@@ -434,7 +446,7 @@
                     if (!listOfFiles.files[i].isAttached && listOfFiles.files[i].status !== FileStatus.Ready) {
                         listOfFiles.files[i].status = FileStatus.Canceling;
                         listOfFiles.files[i].cancelUploadFileProgress = cancelSubmitProgress;
-                        this.deleteFileFromStage(listOfFiles.files[i]);
+                        if (listOfFiles.files[i] !== undefined) this.deleteFileFromStage(listOfFiles.files[i]);
                     }
                 }
             });
@@ -443,10 +455,11 @@
 
     /////////////////////////////////////////
 
-    getStudiesDetails(parameters: any, callback: (data: any) => void) {
+    getStudiesDetails(parameters: any, callback: (data: ReviewProgressData) => void) {
         var self = this;
         parameters = this.arrayOfNameValueToDictionary(parameters);
-
+        let progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.GettingStudies;
         $.ajax({
             url: this.submittedStudiesDetailsUrl + "?" + $.param(parameters),
             type: "GET",
@@ -454,22 +467,25 @@
             beforeSend(xhr) {
                 xhr.setRequestHeader("Authorization", self.securityToken);
             },
-            error(jqXhr, textStatus, errorThrown) {
-                let data: any = {};
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
+            error(jqXhr, textStatus, errorThrown) {               
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error getStudiesDetails()";
+                progressData.details = jqXhr.responseText;
+                callback(progressData);
             },
             success(data, textStatus, jqXhr) {
-                data.status = ProcessStatus.Success;
-                callback(data);
+                progressData.processStatus = ProcessStatus.Success;
+                progressData.data = data;
+                callback(progressData);
             }
         });
     }
 
     ////////////////////////////
 
-    deleteStudy(deleteUrl: string, callback: (data: any) => void) {
+    deleteStudy(deleteUrl: string, callback: (data: ReviewProgressData) => void) {
         var self = this;
 
         var url = self.settings.serverApiUrl;
@@ -477,7 +493,9 @@
             url = self.settings.serverApiUrl.replace("/api", "");
         }
 
-        let data: any = {};
+        let progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.DeletingStudies;
+
         $.ajax({
             url: url + deleteUrl,
             type: "DELETE",
@@ -485,20 +503,23 @@
                 xhr.setRequestHeader("Authorization", self.securityToken);
             },
             error(jqXhr, textStatus, errorThrown) {
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error deleteStudy()";
+                progressData.details = jqXhr.responseText;               
+                callback(progressData);
             },
             success(result, textStatus, jqXhr) {
-                data.status = ProcessStatus.Success;
-                callback(data);
+                progressData.processStatus = ProcessStatus.Success;
+                callback(progressData);
             }
         });
     }
 
     ///////////////////////////
 
-    deleteSeries(deleteUrl: string, callback: (data: any) => void) {
+    deleteSeries(deleteUrl: string, callback: (data: ReviewProgressData) => void) {
         var self = this;
 
         var url = self.settings.serverApiUrl;
@@ -506,7 +527,8 @@
             url = self.settings.serverApiUrl.replace("/api", "");
         }
 
-        let data: any = {};
+        let progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.DeletingSeries;
         $.ajax({
             url: url + deleteUrl,
             type: "DELETE",
@@ -514,20 +536,23 @@
                 xhr.setRequestHeader("Authorization", self.securityToken);
             },
             error(jqXhr, textStatus, errorThrown) {
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error deleteSeries()";
+                progressData.details = jqXhr.responseText;  
+                callback(progressData);
             },
             success(result, textStatus, jqXhr) {
-                data.status = ProcessStatus.Success;
-                callback(data);
+                progressData.processStatus = ProcessStatus.Success;
+                callback(progressData);
             }
         });
     }
 
     ////////////////////////////
 
-    deleteNonDicom(deleteUrl: string, callback: (data: any) => void) {
+    deleteNonDicom(deleteUrl: string, callback: (data: ReviewProgressData) => void) {
         var self = this;
 
         var url = self.settings.serverApiUrl;
@@ -535,7 +560,8 @@
             url = self.settings.serverApiUrl.replace("/api", "");
         }
 
-        let data: any = {};
+        let progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.DeletingNonDicomFiles;
         $.ajax({
             url: url + deleteUrl,
             type: "DELETE",
@@ -543,27 +569,31 @@
                 xhr.setRequestHeader("Authorization", self.securityToken);
             },
             error(jqXhr, textStatus, errorThrown) {
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error deleteNonDicom()";
+                progressData.details = jqXhr.responseText;               
+                callback(progressData);
             },
             success(result, textStatus, jqXhr) {
-                data.status = ProcessStatus.Success;
-                callback(data);
+                progressData.processStatus = ProcessStatus.Success;
+                callback(progressData);
             }
         });
     }
 
     ///////////////////////////
 
-    deleteNonDicoms(ids: string[], callback: (data: any) => void) {
+    deleteNonDicoms(ids: string[], callback: (data: ReviewProgressData) => void) {
         var self = this;
 
         let arr = splitArray(ids, 300);
 
         for (let batch of arr) {
             let idsStr = batch.join();
-            let data: any = {};
+            let progressData = new ReviewProgressData();
+            progressData.processStep = ReviewProcessStep.DeletingNonDicomFiles;
             $.ajax({
                 url: self.nonDicomsUrl + "?ids=" + idsStr,
                 type: "DELETE",
@@ -571,13 +601,16 @@
                     xhr.setRequestHeader("Authorization", self.securityToken);
                 },
                 error(jqXhr, textStatus, errorThrown) {
-                    data.status = ProcessStatus.Error;
-                    data.message = jqXhr.responseText;
-                    callback(data);
+                    progressData.processStatus = ProcessStatus.Error;
+                    progressData.statusCode = jqXhr.status;
+                    progressData.statusText = jqXhr.statusText;
+                    progressData.message = "Error deleteNonDicoms()";
+                    progressData.details = jqXhr.responseText;                      
+                    callback(progressData);
                 },
                 success(result, textStatus, jqXhr) {
-                    data.status = ProcessStatus.Success;
-                    callback(data);
+                    progressData.processStatus = ProcessStatus.Success;
+                    callback(progressData);
                 }
             });
         };
@@ -603,10 +636,11 @@
 
     /////////////////////////////////////////
 
-    getNonDicomsDetails(parameters: any, callback: (data: any) => void) {
+    getNonDicomsDetails(parameters: any, callback: (data: ReviewProgressData) => void) {
         var self = this;
         parameters = this.arrayOfNameValueToDictionary(parameters);
-
+        let progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.GettingNonDicomFiles;
         $.ajax({
             url: this.nonDicomsUrl + "?" + $.param(parameters),
             type: "GET",
@@ -614,15 +648,18 @@
             beforeSend(xhr) {
                 xhr.setRequestHeader("Authorization", self.securityToken);
             },
-            error(jqXhr, textStatus, errorThrown) {
-                let data: any = {};
-                data.status = ProcessStatus.Error;
-                data.message = jqXhr.responseText;
-                callback(data);
+            error(jqXhr, textStatus, errorThrown) {               
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error getNonDicomsDetails()";
+                progressData.details = jqXhr.responseText;
+                callback(progressData);
             },
             success(data, textStatus, jqXhr) {
-                data.status = ProcessStatus.Success;
-                callback(data);
+                progressData.processStatus = ProcessStatus.Success;
+                progressData.data = data;
+                callback(progressData);
             }
         });
     }
@@ -705,6 +742,7 @@
                     data.message = "ERROR CANCEL UPLOAD FILE";
                     data.details = jqXhr.responseText;
                     data.statusCode = jqXhr.status;
+                    data.statusText = jqXhr.statusText;
                     callback(data);
                 },
                 success(result, textStatus, jqXhr) {
@@ -756,6 +794,7 @@
                 error(jqXhr) {
                     file.defferedUploadChunks[1].resolve().promise();
                     fileProgressData.statusCode = jqXhr.status;
+                    fileProgressData.statusText = jqXhr.statusText;
                     fileProgressData.processStatus = ProcessStatus.Error;
                     fileProgressData.message = "File is not uploaded";
                     fileProgressData.details = jqXhr.responseText;
@@ -823,6 +862,8 @@
                     progressData.processStatus = ProcessStatus.Error;
                     progressData.message = "File is not uploaded";
                     progressData.details = jqXhr.responseText;
+                    progressData.statusCode = jqXhr.status;
+                    progressData.statusText = jqXhr.statusText;
                     uploadFileProgress(progressData);
                 },
                 success(result, textStatus, jqXhr) {
@@ -941,6 +982,7 @@ class SubmissionProgressData {
     processStatus: ProcessStatus;
     processStep: ProcessStep;
     statusCode: number;
+    statusText: string;
     message: string;
     details: string;
     progress: number;
@@ -954,8 +996,19 @@ class FileProgressData {
     currentUploadedChunkSize: number;
     processStatus: ProcessStatus;
     statusCode: number;
+    statusText: string;
     message: string;
     details: string;
+}
+
+class ReviewProgressData {
+    processStatus: ProcessStatus;
+    processStep: ReviewProcessStep;
+    statusCode: number;
+    statusText: string;
+    message: string;
+    details: string;
+    data: any;
 }
 
 class ListOfFilesForUpload {
@@ -1040,6 +1093,14 @@ enum ProcessStep {
     Uploading,
     Processing,
     Canceling
+}
+
+enum ReviewProcessStep {
+    GettingStudies,
+    GettingNonDicomFiles,
+    DeletingStudies,
+    DeletingSeries,
+    DeletingNonDicomFiles
 }
 
 enum SubmissionTransactionStatus {
