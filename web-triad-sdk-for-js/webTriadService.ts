@@ -13,6 +13,10 @@
 
     //////////////////////////////////////////////////////////////////////////
 
+    /**
+     * Initializes service
+     * @param {IServiceSettings} serviceSettings
+     */
     constructor(serviceSettings: IServiceSettings) {
         this.settings = $.extend({
             serverApiUrl: "http://cuv-triad-app.restonuat.local/api",
@@ -35,6 +39,13 @@
 
     ////////////////////////////////////////////
 
+    /**
+     * Submits files to Web TRIAD API
+     * @param {IFileExt[]} files
+     * @param {ItemData[]} metadata
+     * @param {(progressData: SubmissionProgressData) => void} uploadAndSubmitListOfFilesProgress
+     * @returns {string}
+     */
     submitFiles(files: IFileExt[], metadata: ItemData[], uploadAndSubmitListOfFilesProgress: (progressData: SubmissionProgressData) => void) {
         const id = this.addListOfFilesForUpload(files);
         this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
