@@ -1,4 +1,6 @@
-﻿class WebTriadService {
+﻿// test commit
+
+class WebTriadService {
     private self = this;
     private fileApiUrl = "/files";
     private dicomViewerUrl = "/dicomViewerUrl";
@@ -13,7 +15,7 @@
 
     //////////////////////////////////////////////////////////////////////////
 
-    constructor(serviceSettings: IServiceSettings) {
+    constructor(serviceSettings: IServiceSettings ) {
         this.settings = $.extend({
             serverApiUrl: "http://cuv-triad-app.restonuat.local/api",
             numberOfFilesInPackage: 4,
