@@ -1,6 +1,4 @@
-﻿// test commit
-
-class WebTriadService {
+﻿class WebTriadService {
     private self = this;
     private fileApiUrl = "/files";
     private dicomViewerUrl = "/dicomViewerUrl";
@@ -15,6 +13,10 @@ class WebTriadService {
 
     //////////////////////////////////////////////////////////////////////////
 
+    /**
+    * Initialize Web TRIAD Client
+    * @param {IServiceSettings} serviceSettings
+    */
     constructor(serviceSettings: IServiceSettings ) {
         this.settings = $.extend({
             serverApiUrl: "http://cuv-triad-app.restonuat.local/api",
@@ -37,6 +39,13 @@ class WebTriadService {
 
     ////////////////////////////////////////////
 
+    /**
+    * Sends files to Web TRIAD
+    * @param {IFileExt[]} files
+    * @param {ItemData[]} metadata
+    * @param {(progressData: SubmissionProgressData) => void} uploadAndSubmitListOfFilesProgress
+    * @returns {string}
+    */
     submitFiles(files: IFileExt[], metadata: ItemData[], uploadAndSubmitListOfFilesProgress: (progressData: SubmissionProgressData) => void) {
         const id = this.addListOfFilesForUpload(files);
         this.uploadAndSubmitListOfFiles(id, metadata, uploadAndSubmitListOfFilesProgress);
@@ -941,8 +950,16 @@ class WebTriadService {
         }
     }
 
-    ////////////////////////////isDicom() is not used
+    private arrayOfNameValueToDictionary(data) {
+        var result = {};
+        for (let i = 0; i < data.length; i++) {
+            result[data[i].Name] = data[i].Value;
+        }
+        return result;
+    }
 
+    /*
+    ////////////////////////////isDicom() is not used  
     private isDicom(file: IFileExt): JQueryPromise<boolean> {
         var deferred = $.Deferred();
         var chunk = file.slice(128, 132);
@@ -968,15 +985,7 @@ class WebTriadService {
         reader.readAsArrayBuffer(chunk);
         return deferred.promise();
     }
-
-    private arrayOfNameValueToDictionary(data) {
-        var result = {};
-        for (let i = 0; i < data.length; i++) {
-            result[data[i].Name] = data[i].Value;
-        }
-        return result;
-    }
-
+    */
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
