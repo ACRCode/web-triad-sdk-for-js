@@ -286,6 +286,7 @@ var WebTriadService = /** @class */ (function () {
                 progressData.processStatus = ProcessStatus.InProgress;
                 progressData.statusCode = jqXhr.status;
                 submissionProgress(progressData);
+                self.waitForProcessingStudiesByServer(uri, submissionProgress);
             }
         });
     };
