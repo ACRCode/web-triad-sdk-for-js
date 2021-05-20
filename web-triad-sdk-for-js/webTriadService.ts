@@ -321,97 +321,6 @@
         });
     }
 
-    //////////////////////////////Waiting for processing the studies by the server
-
-    waitForProcessingStudiesByServer(uri: string, submissionProgress: (progressData: SubmissionProgressData) => void) {
-        var self = this;
-        var rejectedAndCorruptedData;
-        
-        getSubmissionPackage(uri, callback);
-
-        function getSubmissionPackage(uri: string, getSubmissionPackageProgress: (progressData: SubmissionProgressData) => void) {
-            let progressData = new SubmissionProgressData();
-            progressData.processStep = ProcessStep.Processing;
-            $.ajax({
-                url: self.submissionFileInfoApiUrl + "/" + uri,
-                type: "GET",
-                dataType: "json",
-                beforeSend(xhr) {
-                    xhr.setRequestHeader("Authorization", self.securityToken);
-                },
-                error(jqXhr, textStatus, errorThrown) {
-                    progressData.processStatus = ProcessStatus.Error;
-                    progressData.statusCode = jqXhr.status;
-                    progressData.statusText = jqXhr.statusText;
-                    progressData.message = "Error getSubmissionPackage";
-                    progressData.details = jqXhr.responseText;
-                    getSubmissionPackageProgress(progressData);
-                },
-                success(result, text, jqXhr) {
-                    progressData.processStatus = ProcessStatus.Success;
-                    progressData.statusCode = jqXhr.status;
-                    progressData.additionalData = result;
-                    getSubmissionPackageProgress(progressData);
-                }
-            });
-        }
-
-        function callback(progressData: SubmissionProgressData) {
-            switch (progressData.processStatus) {
-            case ProcessStatus.Error:
-                    submissionProgress(progressData);
-                    break;
-            case ProcessStatus.Success:
-                    switch (getSubmissionStatus(progressData.additionalData)) {
-                        case SubmissionPackageStatus.Failed:
-                            progressData.processStatus = ProcessStatus.Error;
-                            progressData.message = "Processing submission package failed";
-                            break;
-                        case SubmissionPackageStatus.Submitting:
-                            setTimeout(() => { getSubmissionPackage(uri, callback) }, 3000);
-                            break;
-                        case SubmissionPackageStatus.Complete:
-                            rejectedAndCorruptedData = prepareRejectedAndCorruptedData(progressData.additionalData);
-                            progressData.rejectedAndCorruptedData = rejectedAndCorruptedData;
-                            submissionProgress(progressData);
-                            break;
-                }
-                    break;
-            }
-        };
-
-        function getSubmissionStatus(data) {
-            if (data.Status === "Failed") return SubmissionPackageStatus.Failed;
-            if (data.Status !== "Complete") return SubmissionPackageStatus.Submitting;
-            for (let i = 0; i < data.Submissions.length; i++) {
-                if (data.Submissions[i].Status === "None" ||
-                    data.Submissions[i].Status === "InProgress" ||
-                    data.Submissions[i].Status === "NotStarted") {
-                    return SubmissionPackageStatus.Submitting;
-                }
-            }
-            return SubmissionPackageStatus.Complete;
-        };
-
-        function prepareRejectedAndCorruptedData(data) {
-            return {
-                NumberOfCorruptedDicoms: data.DicomSummary.CorruptedCount,
-                NumberOfRejectedDicoms: data.DicomSummary.RejectedCount,
-                NumberOfDuplicateDicoms: data.DicomSummary.DuplicateCount,
-                NumberOfRejectedNonDicoms: data.NonDicomsSummary.RejectedCount,
-                NumberOfRejectedDicomDir: data.DicomDirSummary.RejectedCount,
-                CorruptedDicoms: data.DicomSummary.Corrupted,
-                RejectedDicoms: data.DicomSummary.Rejected,
-                DuplicateDicoms: data.DicomSummary.Duplicates,
-                RejectedNonDicoms: data.NonDicomsSummary.Rejected
-            };
-        };
-    }
-
-    //////////////////////////////
-
-
-
     //////////////////////////////
 
     cancelUploadAndSubmitListOfFiles(listOfFilesId: string,
@@ -462,6 +371,36 @@
                     }
                 }
             });
+        });
+    }
+
+    /////////////////////////////////////////
+
+    getPackagesDetails(parameters: any, callback: (data: ReviewProgressData) => void) {
+        var self = this;
+        parameters = this.arrayOfNameValueToDictionary(parameters);
+        let progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.GettingPackages;
+        $.ajax({
+            url: this.submissionFileInfoApiUrl + "/uploaded?" + $.param(parameters),
+            type: "GET",
+            dataType: "json",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error(jqXhr, textStatus, errorThrown) {
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error getPackagesDetails()";
+                progressData.details = jqXhr.responseText;
+                callback(progressData);
+            },
+            success(data, textStatus, jqXhr) {
+                progressData.processStatus = ProcessStatus.Success;
+                progressData.data = data;
+                callback(progressData);
+            }
         });
     }
 
@@ -638,6 +577,39 @@
             } while (start < arr.length)
             return obj;
         };
+    }
+
+    ////////////////////////////
+
+    hidePackage(hideUrl: string, callback: (data: ReviewProgressData) => void) {
+        var self = this;
+
+        var url = self.settings.serverApiUrl;
+        if (hideUrl.indexOf("/api/") > -1) {
+            url = self.settings.serverApiUrl.replace("/api", "");
+        }
+
+        let progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.HidingPackages;
+        $.ajax({
+            url: url + hideUrl,
+            type: "POST",
+            beforeSend(xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error(jqXhr, textStatus, errorThrown) {
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error hidePackage()";
+                progressData.details = jqXhr.responseText;
+                callback(progressData);
+            },
+            success(result, textStatus, jqXhr) {
+                progressData.processStatus = ProcessStatus.Success;
+                callback(progressData);
+            }
+        });
     }
 
     ///////////////////////////
@@ -957,34 +929,6 @@
         return result;
     }
 
-    /*
-    ////////////////////////////isDicom() is not used  
-    private isDicom(file: IFileExt): JQueryPromise<boolean> {
-        var deferred = $.Deferred();
-        var chunk = file.slice(128, 132);
-        var reader = new FileReader();
-        reader.onload = () => {
-            var blob = reader.result;
-            var byteArray = new Uint8Array(blob);
-            var result = "";
-            var byte;
-            for (var i = 0; i < 4; i++) {
-                byte = byteArray[i];
-                if (byte === 0) {
-                    break;
-                }
-                result += String.fromCharCode(byte);
-            }
-            if (result !== "DICM") {
-                deferred.resolve(false);
-            } else {
-                deferred.resolve(true);
-            }
-        }
-        reader.readAsArrayBuffer(chunk);
-        return deferred.promise();
-    }
-    */
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -1056,9 +1000,11 @@ class SubmissionPackage {
 }
 
 enum SubmissionPackageStatus {
+    Pending,
     Submitting,
     Complete,
-    Failed
+    Failed,
+    LongWaitFailed
 }
 
 class ItemData {
@@ -1109,10 +1055,12 @@ enum ProcessStep {
 
 enum ReviewProcessStep {
     GettingStudies,
+    GettingPackages,
     GettingNonDicomFiles,
     DeletingStudies,
     DeletingSeries,
-    DeletingNonDicomFiles
+    DeletingNonDicomFiles,
+    HidingPackages
 }
 
 enum SubmissionTransactionStatus {

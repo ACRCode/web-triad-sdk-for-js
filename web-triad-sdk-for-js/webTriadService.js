@@ -286,96 +286,9 @@ var WebTriadService = /** @class */ (function () {
                 progressData.processStatus = ProcessStatus.InProgress;
                 progressData.statusCode = jqXhr.status;
                 submissionProgress(progressData);
-                self.waitForProcessingStudiesByServer(uri, submissionProgress);
             }
         });
     };
-    //////////////////////////////Waiting for processing the studies by the server
-    WebTriadService.prototype.waitForProcessingStudiesByServer = function (uri, submissionProgress) {
-        var self = this;
-        var rejectedAndCorruptedData;
-        getSubmissionPackage(uri, callback);
-        function getSubmissionPackage(uri, getSubmissionPackageProgress) {
-            var progressData = new SubmissionProgressData();
-            progressData.processStep = ProcessStep.Processing;
-            $.ajax({
-                url: self.submissionFileInfoApiUrl + "/" + uri,
-                type: "GET",
-                dataType: "json",
-                beforeSend: function (xhr) {
-                    xhr.setRequestHeader("Authorization", self.securityToken);
-                },
-                error: function (jqXhr, textStatus, errorThrown) {
-                    progressData.processStatus = ProcessStatus.Error;
-                    progressData.statusCode = jqXhr.status;
-                    progressData.statusText = jqXhr.statusText;
-                    progressData.message = "Error getSubmissionPackage";
-                    progressData.details = jqXhr.responseText;
-                    getSubmissionPackageProgress(progressData);
-                },
-                success: function (result, text, jqXhr) {
-                    progressData.processStatus = ProcessStatus.Success;
-                    progressData.statusCode = jqXhr.status;
-                    progressData.additionalData = result;
-                    getSubmissionPackageProgress(progressData);
-                }
-            });
-        }
-        function callback(progressData) {
-            switch (progressData.processStatus) {
-                case ProcessStatus.Error:
-                    submissionProgress(progressData);
-                    break;
-                case ProcessStatus.Success:
-                    switch (getSubmissionStatus(progressData.additionalData)) {
-                        case SubmissionPackageStatus.Failed:
-                            progressData.processStatus = ProcessStatus.Error;
-                            progressData.message = "Processing submission package failed";
-                            break;
-                        case SubmissionPackageStatus.Submitting:
-                            setTimeout(function () { getSubmissionPackage(uri, callback); }, 3000);
-                            break;
-                        case SubmissionPackageStatus.Complete:
-                            rejectedAndCorruptedData = prepareRejectedAndCorruptedData(progressData.additionalData);
-                            progressData.rejectedAndCorruptedData = rejectedAndCorruptedData;
-                            submissionProgress(progressData);
-                            break;
-                    }
-                    break;
-            }
-        }
-        ;
-        function getSubmissionStatus(data) {
-            if (data.Status === "Failed")
-                return SubmissionPackageStatus.Failed;
-            if (data.Status !== "Complete")
-                return SubmissionPackageStatus.Submitting;
-            for (var i = 0; i < data.Submissions.length; i++) {
-                if (data.Submissions[i].Status === "None" ||
-                    data.Submissions[i].Status === "InProgress" ||
-                    data.Submissions[i].Status === "NotStarted") {
-                    return SubmissionPackageStatus.Submitting;
-                }
-            }
-            return SubmissionPackageStatus.Complete;
-        }
-        ;
-        function prepareRejectedAndCorruptedData(data) {
-            return {
-                NumberOfCorruptedDicoms: data.DicomSummary.CorruptedCount,
-                NumberOfRejectedDicoms: data.DicomSummary.RejectedCount,
-                NumberOfDuplicateDicoms: data.DicomSummary.DuplicateCount,
-                NumberOfRejectedNonDicoms: data.NonDicomsSummary.RejectedCount,
-                NumberOfRejectedDicomDir: data.DicomDirSummary.RejectedCount,
-                CorruptedDicoms: data.DicomSummary.Corrupted,
-                RejectedDicoms: data.DicomSummary.Rejected,
-                DuplicateDicoms: data.DicomSummary.Duplicates,
-                RejectedNonDicoms: data.NonDicomsSummary.Rejected
-            };
-        }
-        ;
-    };
-    //////////////////////////////
     //////////////////////////////
     WebTriadService.prototype.cancelUploadAndSubmitListOfFiles = function (listOfFilesId, cancelSubmitProgress) {
         var _this = this;
@@ -422,6 +335,34 @@ var WebTriadService = /** @class */ (function () {
                     }
                 }
             });
+        });
+    };
+    /////////////////////////////////////////
+    WebTriadService.prototype.getPackagesDetails = function (parameters, callback) {
+        var self = this;
+        parameters = this.arrayOfNameValueToDictionary(parameters);
+        var progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.GettingPackages;
+        $.ajax({
+            url: this.submissionFileInfoApiUrl + "/uploaded?" + $.param(parameters),
+            type: "GET",
+            dataType: "json",
+            beforeSend: function (xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error: function (jqXhr, textStatus, errorThrown) {
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error getPackagesDetails()";
+                progressData.details = jqXhr.responseText;
+                callback(progressData);
+            },
+            success: function (data, textStatus, jqXhr) {
+                progressData.processStatus = ProcessStatus.Success;
+                progressData.data = data;
+                callback(progressData);
+            }
         });
     };
     /////////////////////////////////////////
@@ -584,6 +525,35 @@ var WebTriadService = /** @class */ (function () {
             return obj;
         }
         ;
+    };
+    ////////////////////////////
+    WebTriadService.prototype.hidePackage = function (hideUrl, callback) {
+        var self = this;
+        var url = self.settings.serverApiUrl;
+        if (hideUrl.indexOf("/api/") > -1) {
+            url = self.settings.serverApiUrl.replace("/api", "");
+        }
+        var progressData = new ReviewProgressData();
+        progressData.processStep = ReviewProcessStep.HidingPackages;
+        $.ajax({
+            url: url + hideUrl,
+            type: "POST",
+            beforeSend: function (xhr) {
+                xhr.setRequestHeader("Authorization", self.securityToken);
+            },
+            error: function (jqXhr, textStatus, errorThrown) {
+                progressData.processStatus = ProcessStatus.Error;
+                progressData.statusCode = jqXhr.status;
+                progressData.statusText = jqXhr.statusText;
+                progressData.message = "Error hidePackage()";
+                progressData.details = jqXhr.responseText;
+                callback(progressData);
+            },
+            success: function (result, textStatus, jqXhr) {
+                progressData.processStatus = ProcessStatus.Success;
+                callback(progressData);
+            }
+        });
     };
     ///////////////////////////
     WebTriadService.prototype.setSecurityToken = function (token) {
@@ -920,9 +890,11 @@ var SubmissionPackage = /** @class */ (function () {
 }());
 var SubmissionPackageStatus;
 (function (SubmissionPackageStatus) {
-    SubmissionPackageStatus[SubmissionPackageStatus["Submitting"] = 0] = "Submitting";
-    SubmissionPackageStatus[SubmissionPackageStatus["Complete"] = 1] = "Complete";
-    SubmissionPackageStatus[SubmissionPackageStatus["Failed"] = 2] = "Failed";
+    SubmissionPackageStatus[SubmissionPackageStatus["Pending"] = 0] = "Pending";
+    SubmissionPackageStatus[SubmissionPackageStatus["Submitting"] = 1] = "Submitting";
+    SubmissionPackageStatus[SubmissionPackageStatus["Complete"] = 2] = "Complete";
+    SubmissionPackageStatus[SubmissionPackageStatus["Failed"] = 3] = "Failed";
+    SubmissionPackageStatus[SubmissionPackageStatus["LongWaitFailed"] = 4] = "LongWaitFailed";
 })(SubmissionPackageStatus || (SubmissionPackageStatus = {}));
 var ItemData = /** @class */ (function () {
     function ItemData() {
@@ -954,10 +926,12 @@ var ProcessStep;
 var ReviewProcessStep;
 (function (ReviewProcessStep) {
     ReviewProcessStep[ReviewProcessStep["GettingStudies"] = 0] = "GettingStudies";
-    ReviewProcessStep[ReviewProcessStep["GettingNonDicomFiles"] = 1] = "GettingNonDicomFiles";
-    ReviewProcessStep[ReviewProcessStep["DeletingStudies"] = 2] = "DeletingStudies";
-    ReviewProcessStep[ReviewProcessStep["DeletingSeries"] = 3] = "DeletingSeries";
-    ReviewProcessStep[ReviewProcessStep["DeletingNonDicomFiles"] = 4] = "DeletingNonDicomFiles";
+    ReviewProcessStep[ReviewProcessStep["GettingPackages"] = 1] = "GettingPackages";
+    ReviewProcessStep[ReviewProcessStep["GettingNonDicomFiles"] = 2] = "GettingNonDicomFiles";
+    ReviewProcessStep[ReviewProcessStep["DeletingStudies"] = 3] = "DeletingStudies";
+    ReviewProcessStep[ReviewProcessStep["DeletingSeries"] = 4] = "DeletingSeries";
+    ReviewProcessStep[ReviewProcessStep["DeletingNonDicomFiles"] = 5] = "DeletingNonDicomFiles";
+    ReviewProcessStep[ReviewProcessStep["HidingPackages"] = 6] = "HidingPackages";
 })(ReviewProcessStep || (ReviewProcessStep = {}));
 var SubmissionTransactionStatus;
 (function (SubmissionTransactionStatus) {
