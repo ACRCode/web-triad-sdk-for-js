@@ -1,4 +1,7 @@
-﻿class WebTriadService {
+﻿declare var queryFileMetadataTest: string;
+queryFileMetadataTest = "";
+
+class WebTriadService {
     private self = this;
     private fileApiUrl = "/files";
     private dicomViewerUrl = "/dicomViewerUrl";
@@ -17,7 +20,7 @@
     * Initialize Web TRIAD Client
     * @param {IServiceSettings} serviceSettings
     */
-    constructor(serviceSettings: IServiceSettings ) {
+    constructor(serviceSettings: IServiceSettings) {
         this.settings = $.extend({
             serverApiUrl: "http://cuv-triad-app.restonuat.local/api",
             numberOfFilesInPackage: 4,
@@ -765,7 +768,7 @@
             var fileProgressData = new FileProgressData();
 
             $.ajax({
-                url: self.fileApiUrl,
+                url: self.fileApiUrl + queryFileMetadataTest,
                 type: "POST",
                 contentType: "application/octet-stream",
                 processData: false,
